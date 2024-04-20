@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  photoeditor-server:
+    container_name: photoeditor-server
+    image: photoeditor-server:latest
+    volumes:
+      - ${HOST_CERT_FOLDER}:${CONTAINER_CERT_FOLDER}
+    build: .
+    environment:
+      DOCKER_ENV: "true"
+      PRIVKEY_PATH: ${PRIVKEY_PATH}
+      CERT_PATH: ${CERT_PATH}
+      SERVER_PORT: ${SERVER_PORT:-5000}
+      MONGODB_DB: ${MONGODB_DB:-twitterLogs}
+      MONGODB_USERDB: ${MONGODB_USERDB:-twitterUsers}
+      MONGODB_PORT: ${MONGODB_PORT:-27017}
+      MONGODB_USERNAME: ${MONGODB_USERNAME:-admin}
+      MONGODB_PASSWORD: ${MONGODB_PASSWORD}
+      B2_ACCOUNT_ID: ${B2_ACCOUNT_ID}
+      B2_APPLICATION_KEY: ${B2_APPLICATION_KEY}
+      B2_BUCKET_ID: ${B2_BUCKET_ID}
+      MONGODB_HOST: mongodb-image
+    ports:
+      - "${SERVER_PORT:-3000}:${SERVER_PORT:-3000}"
+    depends_on:
+      - mongodb
+    restart: always
+
+  mongodb:
+    container_name: mongodb-image
+    image: mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_PASSWORD}
+    ports:
+      - "${MONGODB_PORT:-27017}:${MONGODB_PORT:-27017}"
+    volumes:
+      - "/root/mongodb-image:/data/db"
+    restart: always
