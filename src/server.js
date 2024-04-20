@@ -4,6 +4,7 @@ const path = require('path');
 const B2 = require('backblaze-b2');
 const https = require('https');
 const fs = require('fs');
+const utils = require('./function');
 
 if (!process.env.DOCKER_ENV) {
     require('dotenv').config();
@@ -34,38 +35,6 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
-// Authenticate with B2
-async function authenticateB2() {
-    try {
-        await b2.authorize();
-    } catch (error) {
-        console.error('B2 Authorization error:', error);
-        throw error;
-    }
-}
-
-// Upload file to B2
-async function uploadToB2(filePath, fileName) {
-    try {
-        await authenticateB2();
-        const uploadUrl = await b2.getUploadUrl({
-            bucketId: process.env.B2_BUCKET_ID
-        });
-
-        const response = await b2.uploadFile({
-            uploadUrl: uploadUrl.data.uploadUrl,
-            uploadAuthToken: uploadUrl.data.authorizationToken,
-            filename: fileName,
-            data: Buffer.from(require('fs').readFileSync(filePath))
-        });
-
-        return response.data;
-    } catch (error) {
-        console.error('B2 upload error:', error);
-        throw error;
-    }
-}
-
 // Endpoint to handle POST requests for file uploads
 app.post('/upload', upload.single('image'), async (req, res) => {
     const userId = req.body.userId; // Retrieve the userId from form data
@@ -79,7 +48,10 @@ app.post('/upload', upload.single('image'), async (req, res) => {
         const localFileName = req.file.filename;
 
         // Upload to Backblaze B2
-        const b2Response = await uploadToB2(localFilePath, localFileName);
+        const b2Response = await utils.uploadToB2(localFilePath, localFileName);
+
+        // Log the upload details in MongoDB
+        await utils.logUploadDetails(userId, localFileName);
 
         // Send success response
         res.send({
