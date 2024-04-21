@@ -1,0 +1,45 @@
+name: Deploy Worker to Cloudflare
+
+on:
+  push:
+    branches: [ "master" ]
+    paths:
+      - 'worker/**'
+      - 'wrangler.toml'
+  pull_request:
+    branches: [ "master" ]
+    paths:
+      - 'worker/**'
+      - 'wrangler.toml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install Wrangler
+        run: npm install -g wrangler
+
+      - name: Replace Worker Name in wrangler.toml
+        run: |
+          WORKER_NAME=${{ secrets.CLOUDFLARE_WORKER_NAME || 'photo-editor' }}
+          if [ -z "$WORKER_NAME" ]; then
+            WORKER_NAME="photo-editor"
+          fi
+          sed -i "s/name = \".*\"/name = \"$WORKER_NAME\"/" ../wrangler.toml
+
+      - name: Replace Port in worker.js
+        run: |
+          WORKER_NAME=${{ secrets.CLOUDFLARE_WORKER_NAME || 'photo-editor' }}
+          PORT=${{ secrets.SERVER_HTTP_PORT || '3000' }}
+          sed -i "s/__SERVER_HTTP_PORT__/$PORT/g" worker.js
+
+      - name: Publish the Worker
+        run: wrangler deploy --env production
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
