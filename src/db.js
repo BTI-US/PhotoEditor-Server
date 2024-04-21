@@ -5,14 +5,14 @@ if (!process.env.DOCKER_ENV) {
 }
 
 // Construct the MongoDB URI using environment variables
-const uri = `mongodb://${process.env.MONGODB_USERNAME}:${process.env.MONGODB_PASSWORD}`
-            + `@${process.env.MONGODB_HOST}:${process.env.MONGODB_PORT}/?authSource=admin`;
+const uri = `mongodb://${process.env.MONGODB_USERNAME}:${process.env.MONGODB_PASSWORD}` +
+            `@${process.env.MONGODB_HOST}:${process.env.MONGODB_PORT}/?authSource=admin`;
 
 const client = new MongoClient(uri);
 let dbConnection = null;
 
 module.exports = {
-    connectToServer() {
+    connectToServer () {
         return new Promise((resolve, reject) => {
             client.connect()
                 .then(() => {
@@ -27,11 +27,11 @@ module.exports = {
                 });
         });
     },
-    getDb() {
+    getDb () {
         return dbConnection;
     },
-    closeConnection() {
+    closeConnection () {
         console.log("Closing connection to MongoDB server");
         client.close();
-    },
+    }
 };
