@@ -16,13 +16,21 @@ mongoUtil.connectToServer()
 
         // Create a unique index for 'userId'
         localDbConnection.collection('imageUpload').createIndex({ userId: 1 }, { unique: true })
-            .then(() => console.log("Unique index created successfully on 'userId'"))
-            .catch(err => console.error("Error creating unique index on 'userId':", err));
+            .then(() => console.log("Unique index created successfully on 'userId' for imageUpload"))
+            .catch(err => console.error("Error creating unique index on 'userId' for imageUpload:", err));
 
         // Create a compound index for 'fileName' and 'createdAt' without enforcing uniqueness
         localDbConnection.collection('imageUpload').createIndex({ userId: 1, fileName: 1, createdAt: -1 }, { unique: false })
-            .then(() => console.log("Index created successfully on 'fileName' and 'createdAt'"))
-            .catch(err => console.error("Error creating index on 'fileName' and 'createdAt':", err));
+            .then(() => console.log("Index created successfully on 'fileName' and 'createdAt' for imageUpload"))
+            .catch(err => console.error("Error creating index on 'fileName' and 'createdAt' for imageUpload:", err));
+
+        localDbConnection.collection('imageDownload').createIndex({ userId: 1 }, { unique: true })
+            .then(() => console.log("Unique index created successfully on 'userId' for imageDownload"))
+            .catch(err => console.error("Error creating unique index on 'userId' for imageDownload:", err));
+        
+        localDbConnection.collection('imageDownload').createIndex({ userId: 1, fileName: 1, createdAt: -1 }, { unique: false })
+            .then(() => console.log("Index created successfully on 'fileName' and 'createdAt' for imageDownload"))
+            .catch(err => console.error("Error creating index on 'fileName' and 'createdAt' for imageDownload:", err));
 
         // Assign the database connections to the variables declared at higher scope
         dbConnection = localDbConnection;
@@ -78,6 +86,51 @@ async function uploadToB2 (filePath, fileName, userId) {
 }
 
 /**
+ * @brief Downloads a file from Backblaze B2 cloud storage.
+ * 
+ * @param {string} fileName - The name of the file to download.
+ * @param {string} userId - The ID of the user.
+ * 
+ * @return {Promise<Buffer>} - A promise that resolves to the buffer of the downloaded file.
+ */
+async function downloadFromB2 (fileName, userId) {
+    try {
+        await authenticateB2();
+
+        // Construct a user-specific path in the bucket
+        const userFolderPath = `assets/images/user_${userId}/`;
+        const fullFileName = userFolderPath + fileName;
+
+        // First, get the file version to find the fileId
+        const listFilesResponse = await b2.listFileVersions({
+            bucketId: process.env.B2_BUCKET_ID,
+            startFileName: fullFileName,
+            maxFileCount: 1
+        });
+
+        if (!listFilesResponse.data.files.length) {
+            throw new Error('File not found.');
+        }
+
+        const fileId = listFilesResponse.data.files[0].fileId;
+
+        // Use the fileId to download the file
+        const downloadResponse = await b2.downloadFileById({
+            fileId
+        });
+
+        if (!downloadResponse) {
+            throw new Error('Failed to download file.');
+        }
+
+        return downloadResponse.data;  // This should be a buffer of the downloaded file
+    } catch (error) {
+        console.error('B2 download error:', error);
+        throw error;
+    }
+}
+
+/**
  * @brief Logs the upload details to MongoDB.
  * 
  * @param {string} userId - The ID of the user who uploaded the file.
@@ -105,7 +158,26 @@ async function logUploadDetails (userId, fileName) {
     }
 }
 
+async function logDownloadDetails (userId, fileName) {
+    try {
+        const collection = dbConnection.collection('imageDownload');
+
+        const logEntry = {
+            userId,
+            fileName,
+            createdAt: new Date() // Record the current timestamp
+        };
+
+        await collection.insertOne(logEntry);
+        console.log('Download logged successfully:', logEntry);
+    } catch (error) {
+        console.error('Error logging download to MongoDB:', error);
+    }
+}
+
 module.exports = {
     uploadToB2,
-    logUploadDetails
+    downloadFromB2,
+    logUploadDetails,
+    logDownloadDetails
 };

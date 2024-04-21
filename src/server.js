@@ -3,6 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const https = require('https');
 const fs = require('fs');
+const cors = require('cors');
 const utils = require('./function');
 
 if (!process.env.DOCKER_ENV) {
@@ -18,6 +19,16 @@ const app = express();
 // Ensure that bodyParser is able to handle form-data
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+// Only allow your specific frontend domain and enable credentials
+const corsOptions = {
+    origin (origin, callback) {
+        callback(null, true);
+    },
+    credentials: true, // Enable credentials
+    allowedHeaders: '*', // Accept any headers
+    exposedHeaders: '*' // Expose any headers
+};
 
 // Helper function to ensure directory exists
 function ensureDirSync (dirPath) {
@@ -41,6 +52,11 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage });
+
+app.get('/ping', function (req, res) {
+    res.send('pong');
+});
+app.options('/ping', cors(corsOptions)); // Enable preflight request for this endpoint
 
 // Endpoint to handle POST requests for file uploads
 app.post('/upload', upload.single('image'), async (req, res) => {
@@ -73,6 +89,30 @@ app.post('/upload', upload.single('image'), async (req, res) => {
         res.status(500).send('Error uploading to Backblaze B2: ' + error.message);
     }
 });
+app.options('/upload', cors(corsOptions)); // Enable preflight request for this endpoint
+
+app.get('/download', async (req, res) => {
+    const { fileName, userId } = req.query;
+
+    if (!fileName || !userId) {
+        return res.status(400).send('Missing fileName or userId.');
+    }
+
+    try {
+        const fileBuffer = await utils.downloadFromB2(fileName, userId);
+
+        // Log the download details in MongoDB
+        await utils.logDownloadDetails(userId, fileName);
+
+        res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.send(fileBuffer);
+    } catch (error) {
+        console.error('Download error:', error);
+        res.status(500).send('Failed to download the file');
+    }
+});
+app.options('/download', cors(corsOptions)); // Enable preflight request for this endpoint
 
 const SERVER_PORT = process.env.SERVER_PORT || 3000;
 const keyPath = process.env.PRIVKEY_PATH;

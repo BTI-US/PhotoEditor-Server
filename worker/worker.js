@@ -2,13 +2,13 @@ addEventListener('fetch', event => {
     event.respondWith(handleRequest(event.request));
 });
 
-async function handleRequest(request) {
+async function handleRequest (request) {
     // Modify the request URL
     const url = new URL(request.url);
     url.protocol = 'https:';
 
     // Check the request hostname and set the corresponding backend host and port
-    if (url.hostname === 'upload.btiplatform.com') {
+    if (url.hostname === 'photoeditor.btiplatform.com') {
         url.hostname = 'host.btiplatform.com';
         url.port = '__SERVER_HTTP_PORT__';
     }
