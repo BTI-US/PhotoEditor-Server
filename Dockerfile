@@ -6,6 +6,17 @@ RUN npm install -g npm@10.5.0
 
 # Define build arguments
 ARG DOCKER_ENV="true"
+ARG PRIVKEY_PATH
+ARG CERT_PATH
+ARG SERVER_PORT
+ARG MONGODB_DB
+ARG MONGODB_PORT
+ARG MONGODB_USERNAME
+ARG MONGODB_PASSWORD
+ARG B2_ACCOUNT_ID
+ARG B2_APPLICATION_KEY
+ARG B2_BUCKET_ID
+ARG MONGODB_HOST="mongodb-image"
 
 # Set the working directory in the container
 WORKDIR /usr/src/app

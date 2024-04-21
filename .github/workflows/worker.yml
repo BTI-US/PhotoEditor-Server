@@ -27,9 +27,7 @@ jobs:
       - name: Replace Worker Name in wrangler.toml
         run: |
           WORKER_NAME=${{ secrets.CLOUDFLARE_WORKER_NAME || 'photo-editor' }}
-          if [ -z "$WORKER_NAME" ]; then
-            WORKER_NAME="photo-editor"
-          fi
+
           sed -i "s/name = \".*\"/name = \"$WORKER_NAME\"/" ../wrangler.toml
 
       - name: Replace Port in worker.js

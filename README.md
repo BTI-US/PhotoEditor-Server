@@ -1,5 +1,10 @@
 # PhotoEditor Backend Server
 
+[![CodeQL](https://github.com/BTI-US/PhotoEditor-Server/actions/workflows/codeql.yml/badge.svg)](https://github.com/BTI-US/PhotoEditor-Server/actions/workflows/codeql.yml)
+[![Docker CI](https://github.com/BTI-US/PhotoEditor-Server/actions/workflows/docker-ci.yml/badge.svg)](https://github.com/BTI-US/PhotoEditor-Server/actions/workflows/docker-ci.yml)
+[![Deploy Worker to Cloudflare](https://github.com/BTI-US/PhotoEditor-Server/actions/workflows/worker.yml/badge.svg)](https://github.com/BTI-US/PhotoEditor-Server/actions/workflows/worker.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 ## Introduction
 
 This is the backend server for the PhotoEditor project. It is a RESTful API server that provides endpoints for the frontend client to interact with the database.
@@ -67,14 +72,14 @@ docker-compose up -d
 
 To remove the Docker container, run:
 ```bash
-SERVER_PORT=5000 \
-MONGODB_DB=twitterLogs \
-MONGODB_USERDB=twitterUsers \
-MONGODB_PORT=27017 \
+SERVER_PORT=3000 \
+MONGODB_DB=userLogs \
+MONGODB_PORT=27000 \
 MONGODB_USERNAME=admin \
 MONGODB_PASSWORD='your_mongodb_password' \
-TWITTER_CONSUMER_KEY='your_twitter_consumer_key' \
-TWITTER_CONSUMER_SECRET='your_twitter_consumer_secret' \
+B2_ACCOUNT_ID='your_b2_account_id' \
+B2_APPLICATION_KEY='your_b2_application_key' \
+B2_BUCKET_ID='your_b2_bucket_id' \
 CERT_PATH=/etc/ssl/certs/fullchain2.pem \
 PRIVKEY_PATH=/etc/ssl/certs/privkey2.pem \
 HOST_CERT_FOLDER=/etc/letsencrypt/archive/btiplatform.com \
@@ -85,9 +90,10 @@ docker-compose down
 ## Milestone
 
 - [x] Setup the project
-- [ ] Implement the endpoints
-- [ ] Add file upload to the backblaze b2 cloud
-- [ ] Add mongodb for storing user ID and image names
+- [x] Implement the endpoints
+- [x] Add file upload to the backblaze b2 cloud
+- [x] Add mongodb for storing user ID and image names
+- [x] Add filter rules
 
 ## License
 
