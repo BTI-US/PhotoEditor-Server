@@ -2,12 +2,12 @@ name: Deploy Worker to Cloudflare
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "main" ]
     paths:
       - 'worker/**'
       - 'wrangler.toml'
   pull_request:
-    branches: [ "master" ]
+    branches: [ "main" ]
     paths:
       - 'worker/**'
       - 'wrangler.toml'
