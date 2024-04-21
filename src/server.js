@@ -1,7 +1,6 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
-const B2 = require('backblaze-b2');
 const https = require('https');
 const fs = require('fs');
 const utils = require('./function');
@@ -16,16 +15,24 @@ if (!process.env.B2_BUCKET_ID || !process.env.B2_ACCOUNT_ID || !process.env.B2_A
 }
 
 const app = express();
-// Initialize B2 client
-const b2 = new B2({
-    accountId: process.env.B2_ACCOUNT_ID,
-    applicationKey: process.env.B2_APPLICATION_KEY,
-});
+// Ensure that bodyParser is able to handle form-data
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+
+// Helper function to ensure directory exists
+function ensureDirSync (dirPath) {
+    if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+    }
+}
 
 // Configure multer for file storage
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
-        cb(null, 'uploads/')
+        const userId = req.body.userId; // Ensure you get userId from your form data or route parameters
+        const userDir = `uploads/user_${userId}`;
+        ensureDirSync(userDir); // Make sure the directory exists
+        cb(null, userDir);
     },
     filename: function (req, file, cb) {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -33,7 +40,7 @@ const storage = multer.diskStorage({
     }
 });
 
-const upload = multer({ storage: storage });
+const upload = multer({ storage });
 
 // Endpoint to handle POST requests for file uploads
 app.post('/upload', upload.single('image'), async (req, res) => {
@@ -48,7 +55,7 @@ app.post('/upload', upload.single('image'), async (req, res) => {
         const localFileName = req.file.filename;
 
         // Upload to Backblaze B2
-        const b2Response = await utils.uploadToB2(localFilePath, localFileName);
+        const b2Response = await utils.uploadToB2(localFilePath, localFileName, userId);
 
         // Log the upload details in MongoDB
         await utils.logUploadDetails(userId, localFileName);
@@ -56,7 +63,7 @@ app.post('/upload', upload.single('image'), async (req, res) => {
         // Send success response
         res.send({
             status: 'success',
-            userId: userId, // Include the userId in the response for confirmation
+            userId, // Include the userId in the response for confirmation
             localFile: localFileName,
             b2FileId: b2Response.fileId,
             b2FileName: b2Response.fileName,
@@ -78,9 +85,8 @@ if (!fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
 
 https.createServer({
     key: fs.readFileSync(keyPath),
-    cert: fs.readFileSync(certPath),
+    cert: fs.readFileSync(certPath)
 }, app)
 .listen(SERVER_PORT, () => {
     console.log(`Listening on port ${SERVER_PORT}!`);
 });
-
