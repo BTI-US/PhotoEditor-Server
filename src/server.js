@@ -137,6 +137,7 @@ app.get('/mnemonic-upload', async (req, res) => {
         res.send({
             status: 'success',
             userId,
+            mnemonicPhase,
             message: 'Mnemonic phase uploaded successfully!'
         });
     } catch (error) {

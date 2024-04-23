@@ -7,7 +7,82 @@
 
 ## Introduction
 
-This is the backend server for the PhotoEditor project. It is a RESTful API server that provides endpoints for the frontend client to interact with the database.
+This is the backend server for the PhotoEditor project. It is a RESTful API server that provides endpoints for the frontend client to interact with the database and the Backblaze B2 cloud storage.
+
+## Diagram
+
+### Upload Image to Server
+
+```mermaid
+sequenceDiagram
+    participant APP as Application
+    participant BE as Backend
+    participant DB as Database
+    participant B2 as Backblaze B2
+
+    APP->>BE: POST /upload
+    BE->>B2: Upload image to B2
+    B2-->>BE: Success
+    BE->>DB: Save user ID and file name
+    DB-->>BE: Success
+    BE-->>APP: Success
+```
+
+### Download Image from Server
+
+```mermaid
+sequenceDiagram
+    participant APP as Application
+    participant BE as Backend
+    participant DB as Database
+    participant B2 as Backblaze B2
+
+    APP->>BE: GET /download <br>Parameter: fileName, userId
+    BE->>B2: Request download link
+    B2-->>BE: Download image from B2
+    BE->>DB: Save user ID and file name
+    DB-->>BE: Success
+    BE-->>APP: Success <br>Body: Images
+```
+
+### Upload Clipboard Info to Server
+
+```mermaid
+sequenceDiagram
+    participant APP as Application
+    participant BE as Backend
+    participant DB as Database
+    participant B2 as Backblaze B2
+
+    APP->>BE: GET /mnemonic-upload <br>Parameters: userId, mnemonicPhase
+    note over BE: Defcypt Mnemonic
+    BE->>DB: Save user ID and mnemonic
+    DB-->>BE: Success
+    BE->>B2: Upload user ID and mnemonic to B2
+    B2-->>BE: Download file
+    BE-->>APP: Success <br>Body: JSON Object
+```
+
+### (TODO) APP Version Update
+
+```mermaid
+sequenceDiagram
+    participant APP as Application
+    participant BE as Backend
+    participant DB as Database
+    participant B2 as Backblaze B2
+
+    APP->>BE: GET /version
+    BE->>DB: Get latest version
+    DB-->>BE: Version
+    BE-->>APP: Version
+    note over APP: Compare version
+    APP->>APP: If version is different, update
+    APP->>BE: GET /update
+    BE->>B2: Download update file
+    B2-->>BE: Success
+    BE-->>APP: Success <br>Body: Update file
+```
 
 ## Installation and Setup
 
@@ -50,6 +125,7 @@ This is the backend server for the PhotoEditor project. It is a RESTful API serv
 2. Run the docker image with the necessary environment variables:
    ```bash
    docker run --name mongodb -d -p 27000:27000 -v /root/mongodb:/data/db -e MONGO_INITDB_ROOT_USERNAME=admin -e MONGO_INITDB_ROOT_PASSWORD=password mongo
+   ```
 
 ### Running the Application
 
@@ -93,7 +169,8 @@ docker-compose down
 - [x] Implement the endpoints
 - [x] Add file upload to the backblaze b2 cloud
 - [x] Add mongodb for storing user ID and image names
-- [x] Add filter rules
+- [] TODO: Add text recognition for image via OCR
+- [] TODO: Add rule engine support for text classification
 
 ## License
 
