@@ -2,3 +2,4 @@ node_modules/
 .env
 mnemonic/
 uploads/
+google-application-credentials.json

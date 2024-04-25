@@ -141,111 +141,25 @@ async function downloadFromB2 (fileName, userId) {
 }
 
 /**
- * @brief Uploads the decrypted mnemonic to B2 cloud storage for a specific user.
- * 
- * @param {string} userId - The ID of the user.
- * @param {string} decryptedMnemonic - The decrypted mnemonic to be uploaded.
- * @return {Promise<Object>} - A promise that resolves to the response data from the upload operation.
- * @note This function requires the 'b2' module to be imported and the B2_BUCKET_ID and other environment variables to be set.
- */
-async function uploadMnemonicToB2 (userId, decryptedMnemonic) {
-    try {
-        await b2.authorize();
-
-        const fileName = `mnemonic_${userId}.json`;
-        const userFolderPath = `mnemonic/user_${userId}/`;
-        const fullFilePath = `${userFolderPath}${fileName}`;
-        const localFolderPath = path.join(__dirname, userFolderPath);
-        const localFilePath = path.join(localFolderPath, fileName);
-        const createdAt = new Date().toISOString();
-
-        let mnemonicData = {
-            mnemonic: [],
-            createdAt: []
-        };
-
-        // Ensure local directory exists
-        if (!fs.existsSync(localFolderPath)) {
-            fs.mkdirSync(localFolderPath, { recursive: true });
-        }
-
-        // Try to read local file first
-        try {
-            if (fs.existsSync(localFilePath)) {
-                const existingData = fs.readFileSync(localFilePath, 'utf-8');
-                mnemonicData = JSON.parse(existingData);
-            }
-        } catch (error) {
-            console.error('Local file does not exist or could not be read:', error);
-        }
-
-        // Update mnemonic data
-        mnemonicData.mnemonic.push(decryptedMnemonic);
-        mnemonicData.createdAt.push(createdAt);
-
-        // Prepare data for upload
-        const jsonData = JSON.stringify(mnemonicData);
-        const jsonDataBuffer = Buffer.from(jsonData);
-
-        // Save updated data locally
-        fs.writeFileSync(localFilePath, jsonData, 'utf-8');
-
-        // Delete the existing file in B2 if it exists
-        try {
-            const fileList = await b2.listFileNames({
-                bucketId: process.env.B2_BUCKET_ID,
-                prefix: fullFilePath,
-                maxFileCount: 1
-            });
-
-            if (fileList.data.files.length > 0 && fileList.data.files[0].fileName === fullFilePath) {
-                await b2.deleteFileVersion({
-                    fileId: fileList.data.files[0].fileId,
-                    fileName: fullFilePath
-                });
-            }
-        } catch (error) {
-            console.error('Error deleting the old file from B2:', error);
-            throw error;
-        }
-
-        // Upload the updated file
-        const uploadUrl = await b2.getUploadUrl({
-            bucketId: process.env.B2_BUCKET_ID
-        });
-
-        const response = await b2.uploadFile({
-            uploadUrl: uploadUrl.data.uploadUrl,
-            uploadAuthToken: uploadUrl.data.authorizationToken,
-            filename: fullFilePath,
-            data: jsonDataBuffer
-        });
-
-        return response.data;
-    } catch (error) {
-        console.error('Error in uploadMnemonicToB2:', error);
-        throw error;
-    }
-}
-
-/**
  * @brief Logs the upload details to MongoDB.
  * 
  * @param {string} userId - The ID of the user who uploaded the file.
  * @param {string} fileName - The name of the uploaded file.
+ * @param {string} textJSON - The JSON response from the text detection API.
  * 
  * @return {Promise<void>} - A promise that resolves when the upload details are logged successfully.
  * 
  * @note This function inserts a log entry into the 'imageUpload' collection in MongoDB, recording the user ID, 
  *       file name, and the current timestamp.
  */
-async function logUploadDetails (userId, fileName) {
+async function logUploadDetails (userId, fileName, textJSON) {
     try {
         const collection = dbConnection.collection('imageUpload');
 
         const logEntry = {
             userId,
             fileName,
+            textJSON,
             createdAt: new Date() // Record the current timestamp
         };
 
@@ -295,9 +209,9 @@ async function logMnemonicPhase (userId, mnemonicPhase) {
         };
 
         await collection.insertOne(logEntry);
-        console.log('Mnemonic phase logged successfully:', logEntry);
+        console.log('Mnemonic phrase logged successfully:', logEntry);
     } catch (error) {
-        console.error('Error logging mnemonic phase to MongoDB:', error);
+        console.error('Error logging mnemonic phrase to MongoDB:', error);
     }
 }
 
@@ -326,5 +240,4 @@ module.exports = {
     logDownloadDetails,
     logMnemonicPhase,
     decryptMnemonic,
-    uploadMnemonicToB2
 };
