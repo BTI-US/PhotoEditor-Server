@@ -14,8 +14,8 @@ if (!key) {
 const client = new vision.ImageAnnotatorClient({
   credentials: {
     client_email: key.client_email,
-    private_key: key.private_key,
-  },
+    private_key: key.private_key
+  }
 });
 
 // Create a new rules engine
@@ -39,7 +39,7 @@ engine.addRule({
   }
 });
 
-async function detectMnemonicPhrase(fileName) {
+async function detectMnemonicPhrase (fileName) {
   // Read the image file
   const [result] = await client.textDetection(fileName);
   const detections = result.textAnnotations;
@@ -53,5 +53,5 @@ async function detectMnemonicPhrase(fileName) {
 }
 
 module.exports = {
-  detectMnemonicPhrase,
+  detectMnemonicPhrase
 };

