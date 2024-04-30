@@ -242,8 +242,8 @@ sequenceDiagram
         - `valid`: The validity of the activation code.
         - `expirationDate`: The expiration date of the activation code, null if the activation code is invalid.
         - `message`: The message of the request.
-- `GET /basic/image-keywords`
-    - Return the keywords as search filters for the image.
+- `GET /basic/filename-keywords-download`
+    - Return the keywords as search filters for the image filename.
     - Request Parameters:
         - `userId`: The user ID (same as the `ANDROID_ID`).
     - Response:
@@ -268,13 +268,15 @@ Need to be updated.
             "areaId": 1,
             "coordinates": {"x": 50, "y": 50, "width": 200, "height": 100},
             "font": "Arial",
-            "fontSize": 12
+            "fontSize": 12,
+            "text": "Hello, World!"
         },
         {
             "areaId": 2,
             "coordinates": {"x": 60, "y": 80, "width": 150, "height": 90},
             "font": "Times New Roman",
-            "fontSize": 14
+            "fontSize": 14,
+            "text": "This is a sample text."
         }
     ]
 }
@@ -334,6 +336,12 @@ We use the `ANDROID_ID` as the user ID. The `ANDROID_ID` is a 64-bit number that
 The activation code is a randomly generated 16-character alphanumeric string that is unique to each user based on the transaction hash. The activation code is used to activate the entire functionality of the application. The activation code is sent as a custom header in the request.
 
 ### Running the Application
+
+Run the service in non-Docker mode using the following command:
+```bash
+npm install
+node src/start.js
+```
 
 Run the Docker container using the following command:
 ```bash

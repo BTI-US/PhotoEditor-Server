@@ -3,7 +3,13 @@ const fs = require('fs');
 const Engine = require('json-rules-engine').Engine;
 
 // Load the JSON key into memory
-const key = JSON.parse(fs.readFileSync('../google-application-credentials.json'));
+let key;
+try {
+  key = JSON.parse(fs.readFileSync('../google-application-credentials.json'));
+} catch (error) {
+  console.error('Unable to load Google Cloud credentials from google-application-credentials.json');
+  process.exit(1);
+}
 
 if (!key) {
   console.error('Unable to load Google Cloud credentials from google-application-credentials.json');
