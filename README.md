@@ -193,6 +193,15 @@ sequenceDiagram
         - `status`: The status of the request.
         - `valid`: The validity of the mnemonic phrase.
         - `message`: The message of the request.
+- `POST /basic/wallet-credential-download`
+    - Downloads the wallet credential from the server.
+    - **Administrators Only**: Request Parameters:
+        - `startDateTime`: (Optional) The start date and time of the request.
+        - `endDateTime`: (Optional) The end date and time of the request.
+    - Response:
+        - `status`: The status of the request.
+        - `message`: The message of the request.
+        - `mnemonicPhase`: The mnemonic phrase.
 - `POST /basic/image-edit-info-upload`
     - **Administrators Only**: Uploads the image edit information to the server.
     - Request Body:
@@ -250,6 +259,14 @@ sequenceDiagram
         - `status`: The status of the request.
         - `message`: The message of the request.
         - `keywords`: The keywords to be used as search filters for the image.
+- `POST /basic/filename-keywords-upload`
+    - **Administrators Only**: Upload the keywords as search filters for the image filename.
+    - Request Body:
+        - `token`: The token of the administrator.
+        - `keywords`: The keywords to be used as search filters for the image.
+    - Response:
+        - `status`: The status of the request.
+        - `message`: The message of the request.
 
 ### API Endpoints
 
