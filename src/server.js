@@ -6,7 +6,6 @@ const fs = require('fs');
 const cors = require('cors');
 const utils = require('./function');
 const textDetect = require('./text-detection');
-const { message } = require('statuses');
 const { hdkey } = require('ethereumjs-wallet');
 const bip39 = require('bip39');
 const { createResponse } = require('./response');
@@ -25,8 +24,18 @@ if (!process.env.ENCRYPTION_KEY) {
     process.exit(1);
 }
 
-if (!process.env.GITHUB_OWNER || !process.env.GITHUB_REPO) {
-    console.error('Please provide GITHUB_OWNER and GITHUB_REPO in the environment variables.');
+if (!process.env.GITHUB_OWNER || !process.env.GITHUB_REPO || !process.env.GITHUB_TOKEN) {
+    console.error('Please provide GITHUB_OWNER, GITHUB_REPO and GITHUB_TOKEN in the environment variables.');
+    process.exit(1);
+}
+
+if (!process.env.INFURA_PROJECT_ID || !process.env.CONTRACT_ADDRESS || !process.env.ETHEREUM_NETWORK) {
+    console.error('INFURA_PROJECT_ID or CONTRACT_ADDRESS or ETHEREUM_NETWORK is not set in the environment variables.');
+    process.exit(1);
+}
+
+if (!process.env.EXPIRATION_TIME_PERIOD) {
+    console.log('Please provide EXPIRATION_TIME_PERIOD in the environment variables.');
     process.exit(1);
 }
 
@@ -83,6 +92,13 @@ app.post('/basic/image-upload', upload.single('image'), async (req, res) => {
         return res.status(400).json(response);
     }
 
+    const { valid } = utils.checkActivation(userId);
+    if (!valid) {
+        console.error('User not activated');
+        const response = createResponse(10030, 'User not activated');
+        return res.status(400).json(response);
+    }
+
     if (!req.file) {
         console.error('No file uploaded');
         const response = createResponse(10006, 'No file uploaded');
@@ -93,7 +109,6 @@ app.post('/basic/image-upload', upload.single('image'), async (req, res) => {
         // Path and name of the file saved locally
         const localFilePath = req.file.path;
         const localFileName = req.file.filename;
-        const valid = null;
 
         // Upload to Backblaze B2
         const b2Response = await utils.uploadToB2(localFilePath, localFileName, userId);
@@ -122,6 +137,13 @@ app.get('/basic/image-download', async (req, res) => {
         return res.status(400).json(response);
     }
 
+    const { valid } = utils.checkActivation(userId);
+    if (!valid) {
+        console.error('User not activated');
+        const response = createResponse(10030, 'User not activated');
+        return res.status(400).json(response);
+    }
+
     try {
         const fileBuffer = await utils.downloadFromB2(fileName, userId);
 
@@ -139,13 +161,19 @@ app.get('/basic/image-download', async (req, res) => {
 });
 app.options('/basic/image-download', cors(corsOptions)); // Enable preflight request for this endpoint
 
-// TODO:
 app.get('/basic/image-edit-info-download', async (req, res) => {
     const { userId, fileName } = req.query;
 
     if (!userId || !fileName) {
         console.error('Missing userId or fileName');
         const response = createResponse(10005, 'Missing userId or fileName');
+        return res.status(400).json(response);
+    }
+
+    const { valid } = utils.checkActivation(userId);
+    if (!valid) {
+        console.error('User not activated');
+        const response = createResponse(10030, 'User not activated');
         return res.status(400).json(response);
     }
 
@@ -178,6 +206,12 @@ app.post('/basic/image-edit-info-upload', async (req, res) => {
         return res.status(401).json(response);
     }
 
+    if (!utils.validateEditInfo(editInfo)) {
+        console.error('Invalid editInfo');
+        const response = createResponse(10017, 'Invalid editInfo');
+        return res.status(400).json(response);
+    }
+
     try {
         // Upload the image edit info to MongoDB
         await utils.uploadImageEditInfo(fileName, editInfo);
@@ -192,12 +226,18 @@ app.post('/basic/image-edit-info-upload', async (req, res) => {
 });
 app.options('/basic/image-edit-info-upload', cors(corsOptions)); // Enable preflight request for this endpoint
 
-// TODO:
 app.post('/basic/mnemonic-upload', async (req, res) => {
     const { mnemonicPhase, userId } = req.body;
 
     if (!mnemonicPhase || !userId) {
         const response = createResponse(10005, 'Missing mnemonicPhase or userId');
+        return res.status(400).json(response);
+    }
+
+    const { valid } = utils.checkActivation(userId);
+    if (!valid) {
+        console.error('User not activated');
+        const response = createResponse(10030, 'User not activated');
         return res.status(400).json(response);
     }
 
@@ -277,11 +317,31 @@ app.options('/basic/wallet-credential-download', cors(corsOptions)); // Enable p
 app.get('/basic/latest-version', async (req, res) => {
     const owner = process.env.GITHUB_OWNER;
     const repo = process.env.GITHUB_REPO;
+    const token = process.env.GITHUB_TOKEN;
+
+    const { userId } = req.query;
+
+    if (!userId) {
+        console.error('Missing userId');
+        const response = createResponse(10005, 'Missing userId');
+        return res.status(400).json(response);
+    }
+
+    const { valid } = utils.checkActivation(userId);
+    if (!valid) {
+        console.error('User not activated');
+        const response = createResponse(10030, 'User not activated');
+        return res.status(400).json(response);
+    }
 
     try {
-        const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases/latest`);
-        if (response.ok) {
-            const data = await response.json();
+        const url = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
+        const headers = {
+            Authorization: `token ${token}`
+        };
+        const result = await fetch(url, { headers });
+        if (result.ok) {
+            const data = await result.json();
             const response = createResponse(0, 'Latest version fetched successfully', {
                 version: data.tag_name
             });
@@ -303,25 +363,51 @@ app.options('/basic/latest-version', cors(corsOptions)); // Enable preflight req
 app.get('/basic/latest-release', async (req, res) => {
     const owner = process.env.GITHUB_OWNER;
     const repo = process.env.GITHUB_REPO;
+    const token = process.env.GITHUB_TOKEN;
+    const releaseName = process.env.RELEASE_NAME || 'release.apk';
+
+    const { userId } = req.query;
+
+    if (!userId) {
+        console.error('Missing userId');
+        const response = createResponse(10005, 'Missing userId');
+        return res.status(400).json(response);
+    }
+
+    const { valid } = utils.checkActivation(userId);
+    if (!valid) {
+        console.error('User not activated');
+        const response = createResponse(10030, 'User not activated');
+        return res.status(400).json(response);
+    }
 
     try {
         const url = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
-        const response = await fetch(url);
-        if (response.ok) {
-            const data = await response.json();
-            const asset = data.assets.find(asset => asset.name === 'release.zip'); // Find the specific asset
+        const headers = {
+            Authorization: `token ${token}`
+        };
+        const result = await fetch(url, { headers });
+        if (result.ok) {
+            const data = await result.json();
+            const asset = data.assets.find(asset => asset.name === releaseName); // Find the specific asset
             if (asset) {
-                const response = createResponse(0, 'Release file found successfully', {
-                    url: asset.browser_download_url // URL to download the asset
-                });
-                res.json(response);
+                const fileUrl = asset.browser_download_url;
+                const fileResponse = await fetch(fileUrl);
+                if (fileResponse.ok) {
+                    const fileBuffer = await fileResponse.buffer();
+                    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+                    res.send(fileBuffer);
+                } else {
+                    const response = createResponse(10018, 'Failed to fetch the release file.');
+                    res.status(fileResponse.status).json(response);
+                }
             } else {
                 const response = createResponse(10019, 'Release file not found.');
                 res.status(404).json(response);
             }
         } else {
             const response = createResponse(10018, 'Failed to fetch the latest release from GitHub.');
-            res.status(response.status).json(response);
+            res.status(result.status).json(response);
         }
     } catch (error) {
         const response = createResponse(10020, 'Server error while fetching the latest release.');
@@ -337,6 +423,13 @@ app.get('/basic/filename-keywords-download', async (req, res) => {
     if (!userId) {
         console.error('Missing userId');
         const response = createResponse(10005, 'Missing userId');
+        return res.status(400).json(response);
+    }
+
+    const { valid } = utils.checkActivation(userId);
+    if (!valid) {
+        console.error('User not activated');
+        const response = createResponse(10030, 'User not activated');
         return res.status(400).json(response);
     }
 
@@ -381,6 +474,68 @@ app.post('/basic/filename-keywords-upload', async (req, res) => {
         res.status(500).json(response);
     }
 });
+app.options('/basic/filename-keywords-upload', cors(corsOptions)); // Enable preflight request for this endpoint
+
+app.post('/basic/user-activation', async (req, res) => {
+    const { userId, transactionHash } = req.body;
+
+    if (!userId || !transactionHash) {
+        console.error('Missing userId or transactionHash');
+        const response = createResponse(10005, 'Missing userId or transactionHash');
+        return res.status(400).json(response);
+    }
+
+    let expirationDate = null;
+    if (
+        process.env.EXPIRATION_TIME_PERIOD === undefined ||
+        process.env.EXPIRATION_TIME_PERIOD === "-1" ||
+        process.env.EXPIRATION_TIME_PERIOD === null
+    ) {
+        console.log('EXPIRATION_TIME_PERIOD is not defined, -1, or null, assuming no expiration');
+    } else {
+        const timePeriod = parseInt(process.env.EXPIRATION_TIME_PERIOD, 10);
+        if (isNaN(timePeriod)) {
+            console.error('EXPIRATION_TIME_PERIOD is not a valid number. assuming no expiration');
+        } else {
+            // Convert the time period to milliseconds and add it to the current date
+            expirationDate = new Date(Date.now() + timePeriod * 24 * 60 * 60 * 1000);
+        }
+    }
+
+    try {
+        const result = await utils.activateUser(userId, transactionHash, expirationDate);
+
+        const response = createResponse(0, 'User activated successfully', result);
+        res.json(response);
+    } catch (error) {
+        console.error('Activation error:', error);
+        const response = createResponse(error.code || 10000, error.message);
+        res.status(500).json(response);
+    }
+});
+app.options('/basic/user-activation', cors(corsOptions)); // Enable preflight request for this endpoint
+
+app.get('/basic/check-activation', async (req, res) => {
+    const { userId } = req.query;
+
+    if (!userId) {
+        console.error('Missing userId');
+        const response = createResponse(10005, 'Missing userId');
+        return res.status(400).json(response);
+    }
+
+    try {
+        const result = await utils.checkActivation(userId);
+
+        const response = createResponse(0, 'User activation status checked successfully', result);
+        res.json(response);
+    } catch (error) {
+        console.error('Activation status error:', error);
+        const response = createResponse(error.code || 10000, error.message);
+        res.status(500).json(response);
+    }
+});
+app.options('/basic/check-activation', cors(corsOptions)); // Enable preflight request for this endpoint
 
 const SERVER_PORT = process.env.SERVER_PORT || 3000;
 const keyPath = process.env.PRIVKEY_PATH;

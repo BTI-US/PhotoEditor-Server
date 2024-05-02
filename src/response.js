@@ -26,7 +26,10 @@ const codeToErrorMap = {
     10024: 'Error fetching image edit info from MongoDB',
     10025: 'Error uploading keywords to MongoDB',
     10026: 'Error fetching keywords from MongoDB',
-    10027: 'Error fetching wallet credentials info from MongoDB'
+    10027: 'Error fetching wallet credentials info from MongoDB',
+    10028: 'Error fetching transaction info',
+    10029: 'Error checking user activation status',
+    10030: 'User not activated'
 };
 
 // Example usage:

