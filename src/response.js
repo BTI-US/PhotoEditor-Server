@@ -29,7 +29,8 @@ const codeToErrorMap = {
     10027: 'Error fetching wallet credentials info from MongoDB',
     10028: 'Error fetching transaction info',
     10029: 'Error checking user activation status',
-    10030: 'User not activated'
+    10030: 'User not activated',
+    10031: 'Challenge expired or invalid session'
 };
 
 // Example usage:

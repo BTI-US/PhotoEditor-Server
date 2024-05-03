@@ -4,6 +4,10 @@ const path = require('path');
 const https = require('https');
 const fs = require('fs');
 const cors = require('cors');
+const session = require('express-session');
+const crypto = require('crypto');
+const redis = require('redis');
+const RedisStore = require('connect-redis').default;
 const utils = require('./function');
 const textDetect = require('./text-detection');
 const { hdkey } = require('ethereumjs-wallet');
@@ -40,9 +44,48 @@ if (!process.env.EXPIRATION_TIME_PERIOD) {
 }
 
 const app = express();
-// Ensure that bodyParser is able to handle form-data
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
+app.set('trust proxy', 1); // Trust the first proxy
+
+const redisClient = redis.createClient({
+    socket: {
+        host: process.env.REDIS_HOST || 'redis',
+        port: process.env.REDIS_PORT || '6379'
+    }
+});
+redisClient.connect();
+const sessionStore = new RedisStore({ client: redisClient });
+
+redisClient.on('error', (err) => {
+    console.log('Could not establish a connection with Redis. ', err);
+});
+
+redisClient.on('connect', () => {
+    console.log('Connected to Redis successfully');
+});
+
+redisClient.on('end', () => {
+    console.log('Redis client has disconnected from the server.');
+});
+
+redisClient.on('reconnecting', () => {
+    console.log('Redis client is trying to reconnect to the server.');
+});
+
+redisClient.on('ready', () => {
+    console.log('Redis client is ready to accept requests.');
+});
+
+redisClient.on('warning', (warning) => {
+    console.log('Redis client received a warning:', warning);
+});
+
+redisClient.on('monitor', (time, args, source, database) => {
+    console.log('Redis client is monitoring:', time, args, source, database);
+});
+
+redisClient.on('message', (channel, message) => {
+    console.log('Redis client received a message:', channel, message);
+});
 
 // Only allow your specific frontend domain and enable credentials
 const corsOptions = {
@@ -53,6 +96,37 @@ const corsOptions = {
     allowedHeaders: '*', // Accept any headers
     exposedHeaders: '*' // Expose any headers
 };
+
+// Function to generate a secret key
+function generateSecretKey (length = 32) {
+    return crypto.randomBytes(length).toString('hex');
+}
+
+app.use(cors(corsOptions));
+app.use(session({
+    store: sessionStore,
+    secret: generateSecretKey(), // Generate a random secret key for the session
+    resave: false,
+    saveUninitialized: true,
+    cookie: {
+        path: '/',
+        secure: true, // Set secure cookies based on the connection protocol
+        httpOnly: true, // Protect against client-side scripting accessing the cookie
+        maxAge: 3600000, // Set cookie expiration, etc.
+        sameSite: 'None'
+    }
+}));
+
+// Ensure that bodyParser is able to handle form-data
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+
+// TEST: Middleware to log session data for debugging
+app.use((req, res, next) => {
+    console.log("Session middleware check: Session ID is", req.sessionID);
+    console.log("Session data:", req.session);
+    next();
+});
 
 // Helper function to ensure directory exists
 function ensureDirSync (dirPath) {
@@ -476,12 +550,51 @@ app.post('/basic/filename-keywords-upload', async (req, res) => {
 });
 app.options('/basic/filename-keywords-upload', cors(corsOptions)); // Enable preflight request for this endpoint
 
-app.post('/basic/user-activation', async (req, res) => {
-    const { userId, transactionHash } = req.body;
+// TODO: Client-side (dApp) Handling:
+// Assume using a web3 provider or similar
+// async function signChallenge(challenge, web3, accountAddress) {
+//     return await web3.eth.personal.sign(challenge, accountAddress, '');
+// }
 
-    if (!userId || !transactionHash) {
-        console.error('Missing userId or transactionHash');
-        const response = createResponse(10005, 'Missing userId or transactionHash');
+app.get('/auth/get-challenge', (req, res) => {
+    const challenge = crypto.randomBytes(32).toString('hex');
+    req.session.challenge = challenge; // Store the challenge in the session
+    res.cookie('challenge', challenge, { httpOnly: true, secure: true, sameSite: 'None' });
+    const response = createResponse(0, 'Challenge generated successfully');
+    res.json(response);
+});
+app.options('/auth/get-challenge', cors(corsOptions)); // Enable preflight request for this endpoint
+
+app.post('/auth/verify-challenge', async (req, res) => {
+    const { signature, publicAddress } = req.body;
+    const sessionChallenge = req.session.challenge;
+
+    if (!sessionChallenge) {
+        const response = createResponse(10031, 'Challenge expired or invalid session');
+        return res.status(401).json(response);
+    }
+
+    const { valid } = utils.verifySignature(sessionChallenge, signature, publicAddress);
+
+    if (valid) {
+        // User is authenticated
+        const response = createResponse(0, 'Verification successful');
+        res.json(response);
+    } else {
+        const response = createResponse(10002, 'Authentication failed');
+        res.status(401).json(response);
+    }
+});
+app.options('/auth/verify-challenge', cors(corsOptions)); // Enable preflight request for this endpoint
+
+app.post('/basic/user-activation', async (req, res) => {
+    const { userId, publicAddress, signature } = req.body;
+    const sessionChallenge = req.session.id; // Use session ID as the challenge
+
+    // Validate the required inputs
+    if (!userId || !publicAddress || !signature) {
+        console.error('Missing userId, publicAddress, or signature');
+        const response = createResponse(10005, 'Missing userId, publicAddress, or signature');
         return res.status(400).json(response);
     }
 
@@ -503,8 +616,15 @@ app.post('/basic/user-activation', async (req, res) => {
     }
 
     try {
-        const result = await utils.activateUser(userId, transactionHash, expirationDate);
+        // Verify the signature against the public address
+        const { valid } = utils.verifySignature(sessionChallenge, signature, publicAddress);
+        if (!valid) {
+            console.log('Invalid signature for:', publicAddress);
+            const response = createResponse(10002, 'Authentication failed');
+            return res.status(401).json(response);
+        }
 
+        const result = await utils.activateUser(userId, publicAddress, signature, expirationDate);
         const response = createResponse(0, 'User activated successfully', result);
         res.json(response);
     } catch (error) {

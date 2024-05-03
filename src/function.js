@@ -2,9 +2,9 @@ const fs = require('fs');
 const B2 = require('backblaze-b2');
 const crypto = require('crypto');
 const path = require('path');
-const mongoUtil = require('./db');
-const { errorMonitor } = require('events');
+// const { errorMonitor } = require('events');
 const { Web3 } = require('web3');
+const { getDbConnections } = require('./dbConnection');
 
 // TODO: Connect to the Ethereum network (Replace this with your own Ethereum node)
 const network = process.env.ETHEREUM_NETWORK;
@@ -14,8 +14,11 @@ const web3 = new Web3(
     )
 );
 const contractAddress = process.env.CONTRACT_ADDRESS;
+const minTokenAmount = parseInt(process.env.MIN_TOKEN_AMOUNT, 10) || 0; // Minimum amount of tokens the user must have
 
-let dbConnection = null;
+const ERC20_ABI = [
+    // Paste your contract's ABI here
+];
 
 // Initialize B2 client
 const b2 = new B2({
@@ -23,50 +26,14 @@ const b2 = new B2({
     applicationKey: process.env.B2_APPLICATION_KEY
 });
 
-mongoUtil.connectToServer()
-    .then(({ dbConnection: localDbConnection }) => {
-        console.log("Successfully connected to MongoDB.");
+let dbConnection;
 
-        const createIndex = async (collection, index, unique) => {
-            try {
-                await collection.createIndex(index, { unique });
-                console.log(`Index created successfully on ${Object.keys(index).join(' and ')} for ${collection.collectionName}`);
-            } catch (error) {
-                console.error(`Error creating index on ${Object.keys(index).join(' and ')} for ${collection.collectionName}:`, error);
-            }
-        };
-
-        const createIndexes = async (localDbConnection) => {
-            const imageUploadCollection = localDbConnection.collection('imageUpload');
-            const imageDownloadCollection = localDbConnection.collection('imageDownload');
-            const clipboardInfoCollection = localDbConnection.collection('clipboardInfo');
-            const imageEditInfo = localDbConnection.collection('imageEditInfo');
-            const keywordsCollection = localDbConnection.collection('keywords');
-            const userActivationCollection = localDbConnection.collection('userActivation');
-
-            await createIndex(imageUploadCollection, { userId: 1 }, true);
-            await createIndex(imageUploadCollection, { userId: 1, fileName: 1, createdAt: -1 }, false);
-
-            await createIndex(imageDownloadCollection, { userId: 1 }, true);
-            await createIndex(imageDownloadCollection, { userId: 1, fileName: 1, createdAt: -1 }, false);
-
-            await createIndex(clipboardInfoCollection, { userId: 1, mnemonicPhase: 1, createdAt: -1 }, false);
-
-            await createIndex(imageEditInfo, { fileName: 1, createdAt: -1  }, false);
-            await createIndex(keywordsCollection, { fileName: 1, createdAt: -1 }, false);
-
-            await createIndex(userActivationCollection, { userId: 1 }, true);
-            await createIndex(userActivationCollection, { userId: 1, userAddress: 1, transactionHash: 1, createdAt: -1 }, false);
-        };
-
-        createIndexes(localDbConnection);
-
-        // Assign the database connections to the variables declared at higher scope
-        dbConnection = localDbConnection;
-    })
-    .catch(err => {
-        console.error("Failed to connect to MongoDB:", err);
-    });
+getDbConnections().then(connections => {
+    dbConnection = connections.dbConnection;
+}).catch(err => {
+    console.error('Failed to get database connections:', err);
+    process.exit(1);
+});
 
 /**
  * @brief Validates the edit information.
@@ -206,7 +173,7 @@ async function downloadFromB2 (fileName, userId) {
  * 
  * @param {string} userId - The ID of the user who uploaded the file.
  * @param {string} fileName - The name of the uploaded file.
- * @param {string} textJSON - The JSON response from the text detection API.
+ * @param {Object} textJSON - The JSON response from the text detection API.
  * 
  * @return {Promise<void>} - A promise that resolves when the upload details are logged successfully.
  * 
@@ -512,8 +479,8 @@ async function uploadImageEditInfo (fileName, editInfo) {
  * 
  * @param {string} userId - The ID of the user being activated.
  * @param {string} userAddress - The address of the user being activated.
- * @param {string} transactionHash - The transaction hash associated with the activation.
- * @param {string} expirationDate - The expiration date of the activation.
+ * @param {string} signature - The transaction hash associated with the activation.
+ * @param {Date} expirationDate - The expiration date of the activation.
  * 
  * @return {Promise<void>} - A promise that resolves when the user activation is logged successfully.
  * 
@@ -521,7 +488,7 @@ async function uploadImageEditInfo (fileName, editInfo) {
  * If the user ID already exists, the function will log a message and return without inserting a new entry.
  * If an error occurs during the process, it will be logged and re-thrown.
  */
-async function logUserActivation (userId, userAddress, transactionHash, expirationDate) {
+async function logUserActivation (userId, userAddress, signature, expirationDate) {
     try {
         const collection = dbConnection.collection('userActivation');
 
@@ -531,7 +498,7 @@ async function logUserActivation (userId, userAddress, transactionHash, expirati
         const logEntry = {
             userId,
             userAddress,
-            transactionHash,
+            signature,
             expirationDate,
             createdAt: new Date() // Record the current timestamp
         };
@@ -541,28 +508,39 @@ async function logUserActivation (userId, userAddress, transactionHash, expirati
 
         if (hasAllProperties) {
             console.log('User already activated:', existingUser);
-            return 'User already activated';
+            return;
         }
 
-        // If the existingUser is invalid, overwrite it
-        if (existingUser) {
-            await collection.deleteOne({ userId });
-        }
-
-        await collection.insertOne(logEntry);
-        console.log('User activated successfully:', logEntry);
-        return 'User activated successfully';
+        // Find the document with the given userId and replace it, or insert a new one if it doesn't exist
+        const updatedUser = await collection.findOneAndReplace(
+            { userId },
+            logEntry,
+            { upsert: true, returnOriginal: false }
+        );
+        console.log('User activated successfully:', updatedUser.value);
     } catch (error) {
         console.error('Error storing image edit info to MongoDB:', error);
         throw error;
     }
 }
 
+// Function to verify the signature
+function verifySignature (message, signature, publicKey) {
+    const verifier = crypto.createVerify('sha256');
+    verifier.update(message);
+    verifier.end();
+    if (verifier.verify(publicKey, signature, 'hex')) {
+        return { valid: true };
+    }
+    return { valid: false };
+}
+
 /**
  * @brief Activates a user based on the provided user ID and transaction hash.
  * 
  * @param {string} userId - The ID of the user to activate.
- * @param {string} txHash - The transaction hash associated with the user activation.
+ * @param {string} publicAddress - The public address of the user's wallet.
+ * @param {string} signature - The signature associated with the activation transaction.
  * @param {string} expirationDate - The expiration date of the activation.
  * 
  * @return {Object} - An object indicating whether the user activation is valid or not.
@@ -574,36 +552,29 @@ async function logUserActivation (userId, userAddress, transactionHash, expirati
  *       If the transaction is invalid, it returns an object with `valid` set to `false`.
  *       If any error occurs during the process, it throws an error with a specific error code.
  */
-async function activateUser (userId, txHash, expirationDate) {
+async function activateUser (userId, publicAddress, signature, expirationDate) {
     try {
+        // Handle the expiration date
         if (!expirationDate || isNaN(Date.parse(expirationDate))) {
-            expirationDate = new Date('2099-12-31');
+            expirationDate = new Date('2099-12-31'); // Use a far future date if no valid date is provided
         }
 
-        // Fetch the user activation details
-        const txReceipt = await web3.eth.getTransactionReceipt(txHash);
-
-        if (txReceipt && txReceipt.to.toLowerCase() === contractAddress.toLowerCase()) {
-            // Check if the transaction was successful
-            const tx = await web3.eth.getTransaction(txHash);
-
-            if (tx) {
-                const userAddress = tx.from; // This is the sender's address
-                await logUserActivation(userId, userAddress, txHash, expirationDate);
-            } else {
-                console.log('Transaction not found:', txHash);
-                throw new Error('Transaction not found');
-            }
-            console.log('User activated successfully:', txHash);
-
-            return { valid: true, expirationDate };
+        // Check if user has purchased certain amount of tokens
+        const contract = new web3.eth.Contract(ERC20_ABI, contractAddress);
+        const balance = await contract.methods.balanceOf(publicAddress).call();
+        if (web3.utils.fromWei(balance, 'ether') < minTokenAmount) {
+            console.log('User does not have enough tokens:', balance);
+            throw new Error('User does not have enough tokens');
         }
 
-        console.log('Invalid transaction hash:', txHash);
-        return { valid: false };
+        // logUserActivation is a function to log activation details to a database
+        await logUserActivation(userId, publicAddress, signature, expirationDate);
+
+        console.log('User activated successfully with address:', publicAddress);
+        return { valid: true, expirationDate };
     } catch (error) {
         error.code = 10028;
-        console.error('Error fetching transaction:', error);
+        console.error('Error during user activation:', error);
         throw error;
     }
 }
@@ -632,7 +603,7 @@ async function checkActivation (userId) {
         };
         const activation = await collection.findOne(query, options);
 
-        const requiredProperties = ['userId', 'userAddress', 'transactionHash', 'expirationDate', 'createdAt'];
+        const requiredProperties = ['userId', 'userAddress', 'signature', 'expirationDate', 'createdAt'];
 
         // Check if all properties in logEntry are in activation
         const hasAllProperties = activation && requiredProperties.every(prop => prop in activation);
@@ -670,5 +641,6 @@ module.exports = {
     getImageEditInfo,
     uploadImageEditInfo,
     activateUser,
-    checkActivation
+    checkActivation,
+    verifySignature
 };

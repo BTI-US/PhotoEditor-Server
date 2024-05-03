@@ -13,13 +13,13 @@ services:
       CERT_PATH: ${CERT_PATH}
       SERVER_PORT: ${SERVER_PORT:-3000}
       MONGODB_DB: ${MONGODB_DB:-userLogs}
+      MONGODB_HOST: mongodb
       MONGODB_PORT: 27017
       MONGODB_USERNAME: ${MONGODB_USERNAME:-admin}
       MONGODB_PASSWORD: ${MONGODB_PASSWORD}
       B2_ACCOUNT_ID: ${B2_ACCOUNT_ID}
       B2_APPLICATION_KEY: ${B2_APPLICATION_KEY}
       B2_BUCKET_ID: ${B2_BUCKET_ID}
-      MONGODB_HOST: mongodb
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       GITHUB_OWNER: BTI-US
       GITHUB_REPO: ${GITHUB_REPO:-PhotoEditor}
@@ -29,10 +29,14 @@ services:
       CONTRACT_ADDRESS: ${CONTRACT_ADDRESS}
       ETHEREUM_NETWORK: ${ETHEREUM_NETWORK:-mainnet}
       EXPIRATION_TIME_PERIOD: ${EXPIRATION_TIME_PERIOD:-1}
+      MIN_TOKEN_AMOUNT: ${MIN_TOKEN_AMOUNT:0}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     ports:
       - "${SERVER_PORT:-3000}:${SERVER_PORT:-3000}"
     depends_on:
       - mongodb
+      - redis
     restart: always
 
   mongodb:
@@ -46,3 +50,12 @@ services:
     volumes:
       - "/root/mongodb-image:/data/db"
     restart: always
+
+  redis:
+    container_name: redis
+    image: redis:latest
+    ports:
+      - "${REDIS_PORT:-6000}:6379"
+    restart: always
+    networks:
+      - lotso-network
