@@ -5,7 +5,8 @@ const {
     clipboardInfoSchema,
     imageEditInfoSchema,
     keywordsSchema,
-    userActivationSchema
+    userActivationSchema,
+    subscriptionInfoSchema
     } = require('./dbSchema');
 
 /**
@@ -119,6 +120,11 @@ const dbConnectionPromise = mongoUtil.connectToServer()
                 name: 'userActivation',
                 schema: userActivationSchema,
                 index: { fields: { userId: 1, userAddress: 1, signature: 1, expirationDate: -1 }, unique: true }
+            },
+            {
+                name: 'subscriptionInfo',
+                schema: subscriptionInfoSchema,
+                index: { fields: { userEmail: 1, userName: 1, subscriptionInfo: 1 }, unique: true }
             }
         ];
 

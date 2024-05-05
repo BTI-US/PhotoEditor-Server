@@ -30,7 +30,8 @@ const codeToErrorMap = {
     10028: 'Error fetching transaction info',
     10029: 'Error checking user activation status',
     10030: 'User not activated',
-    10031: 'Challenge expired or invalid session'
+    10031: 'Challenge expired or invalid session',
+    10041: 'Error logging subscription info'
 };
 
 // Example usage:

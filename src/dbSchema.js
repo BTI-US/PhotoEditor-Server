@@ -22,7 +22,7 @@ const imageDownloadSchema = {
 const imageUploadSchema = {
     $jsonSchema: {
         bsonType: "object",
-        required: ["userId", "userAddress", "textJSON", "createdAt"],
+        required: ["userId", "userAddress", "createdAt"],
         properties: {
             userId: {
                 bsonType: "string",
@@ -33,8 +33,8 @@ const imageUploadSchema = {
                 description: "must be a string and is required"
             },
             textJSON: {
-                bsonType: "object",
-                description: "must be an object and is required"
+                bsonType: ["object", 'null'],
+                description: "must be an object or null and is optional",
             },
             createdAt: {
                 bsonType: "date",
@@ -132,11 +132,37 @@ const userActivationSchema = {
     }
 };
 
+const subscriptionInfoSchema = {
+    $jsonSchema: {
+        bsonType: "object",
+        required: ["userEmail", "createdAt"],
+        properties: {
+            userEmail: {
+                bsonType: "string",
+                description: "must be a string and is required",
+            },
+            userName: {
+                bsonType: "string",
+                description: "must be a string and is optional",
+            },
+            subscriptionInfo: {
+                bsonType: "string",
+                description: "must be a string and is optional",
+            },
+            createdAt: {
+                bsonType: "date",
+                description: "must be a date and is required",
+            },
+        },
+    },
+};
+
 module.exports = {
     imageUploadSchema,
     imageDownloadSchema,
     clipboardInfoSchema,
     imageEditInfoSchema,
     keywordsSchema,
-    userActivationSchema
+    userActivationSchema,
+    subscriptionInfoSchema
 };

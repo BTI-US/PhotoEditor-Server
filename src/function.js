@@ -173,14 +173,14 @@ async function downloadFromB2 (fileName, userId) {
  * 
  * @param {string} userId - The ID of the user who uploaded the file.
  * @param {string} fileName - The name of the uploaded file.
- * @param {Object} textJSON - The JSON response from the text detection API.
+ * @param {Object|null} textJSON - The JSON response from the text detection API.
  * 
  * @return {Promise<void>} - A promise that resolves when the upload details are logged successfully.
  * 
  * @note This function inserts a log entry into the 'imageUpload' collection in MongoDB, recording the user ID, 
  *       file name, and the current timestamp.
  */
-async function logUploadDetails (userId, fileName, textJSON) {
+async function logUploadDetails (userId, fileName, textJSON = null) {
     try {
         const collection = dbConnection.collection('imageUpload');
 
@@ -627,6 +627,65 @@ async function checkActivation (userId) {
     }
 }
 
+/**
+ * @brief Logs the subscription information for a user.
+ * 
+ * @param {string} userEmail - The email of the user.
+ * @param {string|null} userName - The name of the user (optional).
+ * @param {object|null} subscriptionInfo - The subscription information (optional).
+ * 
+ * @return {object} - An object indicating whether the subscription info was logged and updated.
+ *                   - isLogged: true if the subscription info was logged, false otherwise.
+ *                   - isUpdated: true if the subscription info was updated, false otherwise.
+ * 
+ * @note If the user already exists in the database, the function updates the existing subscription info.
+ *       If the user does not exist, the function inserts a new document with the subscription info.
+ *       The function throws an error if the user database is not connected or if there is an error logging the subscription info.
+ */
+async function logSubscriptionInfo(userEmail, userName = null, subscriptionInfo = null) {
+    try {
+        if (!dbConnection) {
+            throw new Error('Database connection not established');
+        }
+
+        const options = {
+            sort: { createdAt: -1 },  // Sort by creation date in descending order to get the most recent log
+            limit: 1,  // Limit the result to only one document
+        };
+
+        // Log the subscription information for the user
+        const existingUser = await dbConnection.collection('subscriptionInfo').findOne({ userEmail, userName, subscriptionInfo }, options);
+        if (existingUser) {
+            const updateFields = {
+                createdAt: new Date(),
+            };
+
+            // Update the existing subscription info if it is different
+            await dbConnection.collection('subscriptionInfo').updateOne(
+                { userEmail, userName, subscriptionInfo },
+                {
+                    $set: updateFields,
+                },
+            );
+            console.log(`Subscription info logged for user at email: ${userEmail}`);
+            return { isLogged: true, isUpdated: true };
+        }
+
+        await dbConnection.collection('subscriptionInfo').insertOne({
+            userEmail,
+            userName,
+            subscriptionInfo,
+            createdAt: new Date(),
+        });
+        console.log(`Subscription info re-logged for user at email: ${userEmail}`);
+        return { isLogged: true, isUpdated: false };
+    } catch (error) {
+        console.error('Error logging subscription info:', error);
+        error.code = 10041;
+        throw error; // Re-throw the error to be handled by the caller
+    }
+}
+
 module.exports = {
     validateEditInfo,
     uploadToB2,
@@ -642,5 +701,6 @@ module.exports = {
     uploadImageEditInfo,
     activateUser,
     checkActivation,
-    verifySignature
+    verifySignature,
+    logSubscriptionInfo
 };
