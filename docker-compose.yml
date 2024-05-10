@@ -11,7 +11,7 @@ services:
       DOCKER_ENV: "true"
       PRIVKEY_PATH: ${PRIVKEY_PATH}
       CERT_PATH: ${CERT_PATH}
-      SERVER_PORT: ${SERVER_PORT:-5000}
+      SERVER_PORT: ${SERVER_PORT:-6000}
       MONGODB_DB: ${MONGODB_DB:-userLogs}
       MONGODB_HOST: mongodb
       MONGODB_PORT: 27017
@@ -33,8 +33,9 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       ENABLE_OCR_DETECTION: ${ENABLE_OCR_DETECTION:-false}
+      ENABLE_USER_ID_VERIFICATION: ${ENABLE_USER_ID_VERIFICATION:-false}
     ports:
-      - "${SERVER_PORT:-5000}:${SERVER_PORT:-5000}"
+      - "${SERVER_PORT:-6000}:${SERVER_PORT:-6000}"
     depends_on:
       - mongodb
       - redis

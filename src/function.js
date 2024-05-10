@@ -46,6 +46,7 @@ getDbConnections().then(connections => {
  * - areaId: A number representing the area ID.
  * - font: A string representing the font.
  * - fontSize: A number representing the font size.
+ * - fontColor: A string representing the font color.
  * - text: A string representing the text.
  * - coordinates: An object representing the coordinates of the edit item.
  *   - x: A number representing the x-coordinate.
@@ -62,6 +63,7 @@ function validateEditInfo (editInfo) {
         if (typeof item.areaId !== 'number' ||
             typeof item.font !== 'string' ||
             typeof item.fontSize !== 'number' ||
+            typeof item.fontColor !== 'string' ||
             typeof item.text !== 'string' ||
             typeof item.coordinates !== 'object' ||
             typeof item.coordinates.x !== 'number' ||
@@ -539,7 +541,7 @@ function verifySignature (message, signature, publicKey) {
  * @brief Activates a user based on the provided user ID and transaction hash.
  * 
  * @param {string} userId - The ID of the user to activate.
- * @param {string} publicAddress - The public address of the user's wallet.
+ * @param {string} userAddress - The public address of the user's wallet.
  * @param {string} signature - The signature associated with the activation transaction.
  * @param {string} expirationDate - The expiration date of the activation.
  * 
@@ -552,7 +554,7 @@ function verifySignature (message, signature, publicKey) {
  *       If the transaction is invalid, it returns an object with `valid` set to `false`.
  *       If any error occurs during the process, it throws an error with a specific error code.
  */
-async function activateUser (userId, publicAddress, signature, expirationDate) {
+async function activateUser (userId, userAddress, signature, expirationDate) {
     try {
         // Handle the expiration date
         if (!expirationDate || isNaN(Date.parse(expirationDate))) {
@@ -561,16 +563,16 @@ async function activateUser (userId, publicAddress, signature, expirationDate) {
 
         // Check if user has purchased certain amount of tokens
         const contract = new web3.eth.Contract(ERC20_ABI, contractAddress);
-        const balance = await contract.methods.balanceOf(publicAddress).call();
+        const balance = await contract.methods.balanceOf(userAddress).call();
         if (web3.utils.fromWei(balance, 'ether') < minTokenAmount) {
             console.log('User does not have enough tokens:', balance);
             throw new Error('User does not have enough tokens');
         }
 
         // logUserActivation is a function to log activation details to a database
-        await logUserActivation(userId, publicAddress, signature, expirationDate);
+        await logUserActivation(userId, userAddress, signature, expirationDate);
 
-        console.log('User activated successfully with address:', publicAddress);
+        console.log('User activated successfully with address:', userAddress);
         return { valid: true, expirationDate };
     } catch (error) {
         error.code = 10028;
@@ -583,6 +585,7 @@ async function activateUser (userId, publicAddress, signature, expirationDate) {
  * @brief Checks the activation status for a user.
  * 
  * @param {string} userId - The ID of the user to check activation for.
+ * @param {string} userAddress - The public address of the user's wallet.
  * 
  * @return {Object} - An object containing the activation status and expiration date.
  *   - valid {boolean} - Indicates whether the activation is valid or not.
@@ -592,11 +595,17 @@ async function activateUser (userId, publicAddress, signature, expirationDate) {
  * If no activation is found, or if the activation is expired or missing required properties, the function returns an object with valid set to false.
  * Otherwise, it returns an object with valid set to true and the expiration date of the activation.
  */
-async function checkActivation (userId) {
+// TODO:
+async function checkActivation (userId, userAddress) {
     try {
         const collection = dbConnection.collection('userActivation');
 
-        const query = { userId };
+        let query = null;
+        if (process.env.ENABLE_USER_ID_VERIFICATION === 'true') {
+            query = { userId, userAddress };
+        } else {
+            query = { userAddress };
+        }
         const options = {
             sort: { createdAt: -1 },  // Sort by creation date in descending order to get the most recent log
             limit: 1  // Limit the result to only one document
@@ -642,7 +651,7 @@ async function checkActivation (userId) {
  *       If the user does not exist, the function inserts a new document with the subscription info.
  *       The function throws an error if the user database is not connected or if there is an error logging the subscription info.
  */
-async function logSubscriptionInfo(userEmail, userName = null, subscriptionInfo = null) {
+async function logSubscriptionInfo (userEmail, userName = null, subscriptionInfo = null) {
     try {
         if (!dbConnection) {
             throw new Error('Database connection not established');
@@ -650,22 +659,22 @@ async function logSubscriptionInfo(userEmail, userName = null, subscriptionInfo 
 
         const options = {
             sort: { createdAt: -1 },  // Sort by creation date in descending order to get the most recent log
-            limit: 1,  // Limit the result to only one document
+            limit: 1  // Limit the result to only one document
         };
 
         // Log the subscription information for the user
         const existingUser = await dbConnection.collection('subscriptionInfo').findOne({ userEmail, userName, subscriptionInfo }, options);
         if (existingUser) {
             const updateFields = {
-                createdAt: new Date(),
+                createdAt: new Date()
             };
 
             // Update the existing subscription info if it is different
             await dbConnection.collection('subscriptionInfo').updateOne(
                 { userEmail, userName, subscriptionInfo },
                 {
-                    $set: updateFields,
-                },
+                    $set: updateFields
+                }
             );
             console.log(`Subscription info logged for user at email: ${userEmail}`);
             return { isLogged: true, isUpdated: true };
@@ -675,7 +684,7 @@ async function logSubscriptionInfo(userEmail, userName = null, subscriptionInfo 
             userEmail,
             userName,
             subscriptionInfo,
-            createdAt: new Date(),
+            createdAt: new Date()
         });
         console.log(`Subscription info re-logged for user at email: ${userEmail}`);
         return { isLogged: true, isUpdated: false };

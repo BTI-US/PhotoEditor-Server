@@ -30,6 +30,7 @@ ARG MIN_TOKEN_AMOUNT
 ARG REDIS_HOST="redis"
 ARG REDIS_PORT
 ARG ENABLE_OCR_DETECTION
+ARG ENABLE_USER_ID_VERIFICATION
 
 # Set the working directory in the container
 WORKDIR /usr/src/app

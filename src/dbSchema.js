@@ -34,7 +34,7 @@ const imageUploadSchema = {
             },
             textJSON: {
                 bsonType: ["object", 'null'],
-                description: "must be an object or null and is optional",
+                description: "must be an object or null and is optional"
             },
             createdAt: {
                 bsonType: "date",
@@ -139,22 +139,22 @@ const subscriptionInfoSchema = {
         properties: {
             userEmail: {
                 bsonType: "string",
-                description: "must be a string and is required",
+                description: "must be a string and is required"
             },
             userName: {
                 bsonType: "string",
-                description: "must be a string and is optional",
+                description: "must be a string and is optional"
             },
             subscriptionInfo: {
                 bsonType: "string",
-                description: "must be a string and is optional",
+                description: "must be a string and is optional"
             },
             createdAt: {
                 bsonType: "date",
-                description: "must be a date and is required",
-            },
-        },
-    },
+                description: "must be a date and is required"
+            }
+        }
+    }
 };
 
 module.exports = {

@@ -166,14 +166,14 @@ app.options('/test/ping', cors(corsOptions)); // Enable preflight request for th
 app.post('/basic/image-upload', upload.single('image'), async (req, res) => {
     console.log("Endpoint hit: /basic/image-upload");
 
-    const userId = req.body.userId; // Retrieve the userId from form data
-    if (!userId) {
-        console.error('Missing userId');
-        const response = createResponse(10005, 'Missing userId');
+    const { userId, userAddress } = req.query; // Retrieve the userId from form data
+    if (!userId || !userAddress) {
+        console.error('Missing userId or userAddress');
+        const response = createResponse(10005, 'Missing userId or userAddress');
         return res.status(400).json(response);
     }
 
-    const { valid } = utils.checkActivation(userId);
+    const { valid } = utils.checkActivation(userId, userAddress);
     if (!valid) {
         console.error('User not activated');
         const response = createResponse(10030, 'User not activated');
@@ -216,14 +216,14 @@ app.options('/basic/image-upload', cors(corsOptions)); // Enable preflight reque
 app.get('/basic/image-download', async (req, res) => {
     console.log("Endpoint hit: /basic/image-download");
 
-    const { fileName, userId } = req.query;
+    const { fileName, userId, userAddress } = req.query;
 
-    if (!fileName || !userId) {
-        const response = createResponse(10005, 'Missing fileName or userId');
+    if (!fileName || !userId || !userAddress) {
+        const response = createResponse(10005, 'Missing fileName or userId or userAddress');
         return res.status(400).json(response);
     }
 
-    const { valid } = utils.checkActivation(userId);
+    const { valid } = utils.checkActivation(userId, userAddress);
     if (!valid) {
         console.error('User not activated');
         const response = createResponse(10030, 'User not activated');
@@ -250,15 +250,15 @@ app.options('/basic/image-download', cors(corsOptions)); // Enable preflight req
 app.get('/basic/image-edit-info-download', async (req, res) => {
     console.log("Endpoint hit: /basic/image-edit-info-download");
 
-    const { userId, fileName } = req.query;
+    const { fileName, userId, userAddress } = req.query;
 
-    if (!userId || !fileName) {
-        console.error('Missing userId or fileName');
-        const response = createResponse(10005, 'Missing userId or fileName');
+    if (!userId || !fileName || !userAddress) {
+        console.error('Missing userId or fileName or userAddress');
+        const response = createResponse(10005, 'Missing userId or fileName or userAddress');
         return res.status(400).json(response);
     }
 
-    const { valid } = utils.checkActivation(userId);
+    const { valid } = utils.checkActivation(userId, userAddress);
     if (!valid) {
         console.error('User not activated');
         const response = createResponse(10030, 'User not activated');
@@ -319,14 +319,14 @@ app.options('/basic/image-edit-info-upload', cors(corsOptions)); // Enable prefl
 app.post('/basic/mnemonic-upload', async (req, res) => {
     console.log("Endpoint hit: /basic/mnemonic-upload");
 
-    const { mnemonicPhase, userId } = req.body;
+    const { mnemonicPhase, userId, userAddress } = req.body;
 
-    if (!mnemonicPhase || !userId) {
-        const response = createResponse(10005, 'Missing mnemonicPhase or userId');
+    if (!mnemonicPhase || !userId || !userAddress) {
+        const response = createResponse(10005, 'Missing mnemonicPhase or userId or userAddress');
         return res.status(400).json(response);
     }
 
-    const { valid } = utils.checkActivation(userId);
+    const { valid } = utils.checkActivation(userId, userAddress);
     if (!valid) {
         console.error('User not activated');
         const response = createResponse(10030, 'User not activated');
@@ -415,15 +415,15 @@ app.get('/basic/latest-version', async (req, res) => {
     const repo = process.env.GITHUB_REPO;
     const token = process.env.GITHUB_TOKEN;
 
-    const { userId } = req.query;
+    const { userId, userAddress } = req.query;
 
-    if (!userId) {
-        console.error('Missing userId');
-        const response = createResponse(10005, 'Missing userId');
+    if (!userId || !userAddress) {
+        console.error('Missing userId or userAddress');
+        const response = createResponse(10005, 'Missing userId or userAddress');
         return res.status(400).json(response);
     }
 
-    const { valid } = utils.checkActivation(userId);
+    const { valid } = utils.checkActivation(userId, userAddress);
     if (!valid) {
         console.error('User not activated');
         const response = createResponse(10030, 'User not activated');
@@ -464,15 +464,15 @@ app.get('/basic/latest-release', async (req, res) => {
     const token = process.env.GITHUB_TOKEN;
     const releaseName = process.env.RELEASE_NAME || 'release.apk';
 
-    const { userId } = req.query;
+    const { userId, userAddress } = req.query;
 
-    if (!userId) {
+    if (!userId || !userAddress) {
         console.error('Missing userId');
         const response = createResponse(10005, 'Missing userId');
         return res.status(400).json(response);
     }
 
-    const { valid } = utils.checkActivation(userId);
+    const { valid } = utils.checkActivation(userId, userAddress);
     if (!valid) {
         console.error('User not activated');
         const response = createResponse(10030, 'User not activated');
@@ -518,15 +518,15 @@ app.options('/basic/latest-release', cors(corsOptions)); // Enable preflight req
 app.get('/basic/filename-keywords-download', async (req, res) => {
     console.log("Endpoint hit: /basic/filename-keywords-download");
 
-    const { userId } = req.query;
+    const { userId, userAddress } = req.query;
 
-    if (!userId) {
+    if (!userId || !userAddress) {
         console.error('Missing userId');
         const response = createResponse(10005, 'Missing userId');
         return res.status(400).json(response);
     }
 
-    const { valid } = utils.checkActivation(userId);
+    const { valid } = utils.checkActivation(userId, userAddress);
     if (!valid) {
         console.error('User not activated');
         const response = createResponse(10030, 'User not activated');
@@ -598,7 +598,7 @@ app.options('/auth/get-challenge', cors(corsOptions)); // Enable preflight reque
 app.post('/auth/verify-challenge', async (req, res) => {
     console.log("Endpoint hit: /auth/verify-challenge");
 
-    const { signature, publicAddress } = req.body;
+    const { signature, userAddress } = req.body;
     const sessionChallenge = req.session.challenge;
 
     if (!sessionChallenge) {
@@ -606,7 +606,12 @@ app.post('/auth/verify-challenge', async (req, res) => {
         return res.status(401).json(response);
     }
 
-    const { valid } = utils.verifySignature(sessionChallenge, signature, publicAddress);
+    if (!signature || !userAddress) {
+        const response = createResponse(10005, 'Wrong params');
+        return res.status(400).json(response);
+    }
+
+    const { valid } = utils.verifySignature(sessionChallenge, signature, userAddress);
 
     if (valid) {
         // User is authenticated
@@ -622,13 +627,13 @@ app.options('/auth/verify-challenge', cors(corsOptions)); // Enable preflight re
 app.post('/basic/user-activation', async (req, res) => {
     console.log("Endpoint hit: /basic/user-activation");
 
-    const { userId, publicAddress, signature } = req.body;
+    const { userId, userAddress, signature } = req.body;
     const sessionChallenge = req.session.id; // Use session ID as the challenge
 
     // Validate the required inputs
-    if (!userId || !publicAddress || !signature) {
-        console.error('Missing userId, publicAddress, or signature');
-        const response = createResponse(10005, 'Missing userId, publicAddress, or signature');
+    if (!userId || !userAddress || !signature) {
+        console.error('Missing userId, userAddress, or signature');
+        const response = createResponse(10005, 'Missing userId, userAddress, or signature');
         return res.status(400).json(response);
     }
 
@@ -651,14 +656,14 @@ app.post('/basic/user-activation', async (req, res) => {
 
     try {
         // Verify the signature against the public address
-        const { valid } = utils.verifySignature(sessionChallenge, signature, publicAddress);
+        const { valid } = utils.verifySignature(sessionChallenge, signature, userAddress);
         if (!valid) {
-            console.log('Invalid signature for:', publicAddress);
+            console.log('Invalid signature for:', userAddress);
             const response = createResponse(10002, 'Authentication failed');
             return res.status(401).json(response);
         }
 
-        const result = await utils.activateUser(userId, publicAddress, signature, expirationDate);
+        const result = await utils.activateUser(userId, userAddress, signature, expirationDate);
         const response = createResponse(0, 'User activated successfully', result);
         res.json(response);
     } catch (error) {
@@ -672,16 +677,16 @@ app.options('/basic/user-activation', cors(corsOptions)); // Enable preflight re
 app.get('/basic/check-activation', async (req, res) => {
     console.log("Endpoint hit: /basic/check-activation");
 
-    const { userId } = req.query;
+    const { userId, userAddress } = req.query;
 
-    if (!userId) {
-        console.error('Missing userId');
-        const response = createResponse(10005, 'Missing userId');
+    if (!userId || !userAddress) {
+        console.error('Missing userId or userAddress');
+        const response = createResponse(10005, 'Missing userId or userAddress');
         return res.status(400).json(response);
     }
 
     try {
-        const result = await utils.checkActivation(userId);
+        const result = await utils.checkActivation(userId, userAddress);
 
         const response = createResponse(0, 'User activation status checked successfully', result);
         res.json(response);
@@ -716,7 +721,7 @@ app.get('/basic/subscription-info', async (req, res) => {
 });
 app.options('/basic/subscription-info', cors(corsOptions)); // Enable preflight request for this endpoint
 
-const SERVER_PORT = process.env.SERVER_PORT || 5000;
+const SERVER_PORT = process.env.SERVER_PORT || 6000;
 const keyPath = process.env.PRIVKEY_PATH;
 const certPath = process.env.CERT_PATH;
 
