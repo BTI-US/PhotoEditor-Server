@@ -1,17 +1,14 @@
-const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const https = require('https');
 const fs = require('fs');
 const cors = require('cors');
-const session = require('express-session');
 const crypto = require('crypto');
-const redis = require('redis');
-const RedisStore = require('connect-redis').default;
 const utils = require('./function');
 const { hdkey } = require('ethereumjs-wallet');
 const bip39 = require('bip39');
 const { createResponse } = require('./response');
+const { app, corsOptions } = require('./appConfig');
 
 if (!process.env.DOCKER_ENV) {
     require('dotenv').config();
@@ -47,91 +44,6 @@ if (process.env.ENABLE_OCR_DETECTION === 'true') {
     textDetect = require('./text-detection');
 }
 
-const app = express();
-app.set('trust proxy', 1); // Trust the first proxy
-
-const redisClient = redis.createClient({
-    socket: {
-        host: process.env.REDIS_HOST || 'redis',
-        port: process.env.REDIS_PORT || '6379'
-    }
-});
-redisClient.connect();
-const sessionStore = new RedisStore({ client: redisClient });
-
-redisClient.on('error', (err) => {
-    console.log('Could not establish a connection with Redis. ', err);
-});
-
-redisClient.on('connect', () => {
-    console.log('Connected to Redis successfully');
-});
-
-redisClient.on('end', () => {
-    console.log('Redis client has disconnected from the server.');
-});
-
-redisClient.on('reconnecting', () => {
-    console.log('Redis client is trying to reconnect to the server.');
-});
-
-redisClient.on('ready', () => {
-    console.log('Redis client is ready to accept requests.');
-});
-
-redisClient.on('warning', (warning) => {
-    console.log('Redis client received a warning:', warning);
-});
-
-redisClient.on('monitor', (time, args, source, database) => {
-    console.log('Redis client is monitoring:', time, args, source, database);
-});
-
-redisClient.on('message', (channel, message) => {
-    console.log('Redis client received a message:', channel, message);
-});
-
-// Only allow your specific frontend domain and enable credentials
-const corsOptions = {
-    origin (origin, callback) {
-        callback(null, true);
-    },
-    credentials: true, // Enable credentials
-    allowedHeaders: '*', // Accept any headers
-    exposedHeaders: '*' // Expose any headers
-};
-
-// Function to generate a secret key
-function generateSecretKey (length = 32) {
-    return crypto.randomBytes(length).toString('hex');
-}
-
-app.use(cors(corsOptions));
-app.use(session({
-    store: sessionStore,
-    secret: generateSecretKey(), // Generate a random secret key for the session
-    resave: false,
-    saveUninitialized: true,
-    cookie: {
-        path: '/',
-        secure: true, // Set secure cookies based on the connection protocol
-        httpOnly: true, // Protect against client-side scripting accessing the cookie
-        maxAge: 3600000, // Set cookie expiration, etc.
-        sameSite: 'None'
-    }
-}));
-
-// Ensure that bodyParser is able to handle form-data
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
-
-// TEST: Middleware to log session data for debugging
-app.use((req, res, next) => {
-    console.log("Session middleware check: Session ID is", req.sessionID);
-    console.log("Session data:", req.session);
-    next();
-});
-
 // Helper function to ensure directory exists
 function ensureDirSync (dirPath) {
     if (!fs.existsSync(dirPath)) {
@@ -155,6 +67,18 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
+/**
+ * @swagger
+ * /test/ping:
+ *   get:
+ *     tags:
+ *       - Test Endpoints
+ *     summary: Test endpoint
+ *     description: This endpoint is used for testing. It returns a 'pong' response when hit.
+ *     responses:
+ *       200:
+ *         description: Returns 'pong'
+ */
 app.get('/test/ping', function (req, res) {
     console.log("Endpoint hit: /test/ping");
     const response = createResponse(0, 'pong');
@@ -162,7 +86,37 @@ app.get('/test/ping', function (req, res) {
 });
 app.options('/test/ping', cors(corsOptions)); // Enable preflight request for this endpoint
 
-// Endpoint to handle POST requests for file uploads
+/**
+ * @swagger
+ * /basic/image-upload:
+ *   post:
+ *     tags:
+ *       - Basic Endpoints
+ *     summary: Uploads an image file
+ *     description: This endpoint allows a user to upload an image file. The user must be activated and the image file is uploaded to Backblaze B2. If OCR detection is enabled, the image is processed for text recognition. The upload details are logged in MongoDB.
+ *     consumes:
+ *       - multipart/form-data
+ *     parameters:
+ *       - in: formData
+ *         name: image
+ *         type: file
+ *         description: The file to upload.
+ *       - in: query
+ *         name: userId
+ *         type: string
+ *         description: The ID of the user.
+ *       - in: query
+ *         name: userAddress
+ *         type: string
+ *         description: The address of the user.
+ *     responses:
+ *       200:
+ *         description: File uploaded successfully
+ *       400:
+ *         description: Missing userId or userAddress, User not activated, No file uploaded
+ *       500:
+ *         description: Server error
+ */
 app.post('/basic/image-upload', upload.single('image'), async (req, res) => {
     console.log("Endpoint hit: /basic/image-upload");
 
@@ -213,6 +167,35 @@ app.post('/basic/image-upload', upload.single('image'), async (req, res) => {
 });
 app.options('/basic/image-upload', cors(corsOptions)); // Enable preflight request for this endpoint
 
+/**
+ * @swagger
+ * /basic/image-download:
+ *   get:
+ *     tags:
+ *       - Basic Endpoints
+ *     summary: Downloads an image file
+ *     description: This endpoint allows a user to download an image file. The user must be activated and the image file is downloaded from Backblaze B2. The download details are logged in MongoDB.
+ *     parameters:
+ *       - in: query
+ *         name: fileName
+ *         type: string
+ *         description: The name of the file to download.
+ *       - in: query
+ *         name: userId
+ *         type: string
+ *         description: The ID of the user.
+ *       - in: query
+ *         name: userAddress
+ *         type: string
+ *         description: The address of the user.
+ *     responses:
+ *       200:
+ *         description: File downloaded successfully
+ *       400:
+ *         description: Missing fileName or userId or userAddress, User not activated
+ *       500:
+ *         description: Server error
+ */
 app.get('/basic/image-download', async (req, res) => {
     console.log("Endpoint hit: /basic/image-download");
 
@@ -247,6 +230,35 @@ app.get('/basic/image-download', async (req, res) => {
 });
 app.options('/basic/image-download', cors(corsOptions)); // Enable preflight request for this endpoint
 
+/**
+ * @swagger
+ * /basic/image-edit-info-download:
+ *   get:
+ *     tags:
+ *       - Basic Endpoints
+ *     summary: Downloads image edit information
+ *     description: This endpoint allows a user to download image edit information. The user must be activated and the image edit information is downloaded from MongoDB.
+ *     parameters:
+ *       - in: query
+ *         name: fileName
+ *         type: string
+ *         description: The name of the file to download edit information for.
+ *       - in: query
+ *         name: userId
+ *         type: string
+ *         description: The ID of the user.
+ *       - in: query
+ *         name: userAddress
+ *         type: string
+ *         description: The address of the user.
+ *     responses:
+ *       200:
+ *         description: Image edit information downloaded successfully
+ *       400:
+ *         description: Missing fileName or userId or userAddress, User not activated
+ *       500:
+ *         description: Server error
+ */
 app.get('/basic/image-edit-info-download', async (req, res) => {
     console.log("Endpoint hit: /basic/image-edit-info-download");
 
@@ -280,6 +292,46 @@ app.get('/basic/image-edit-info-download', async (req, res) => {
 app.options('/basic/image-edit-info-download', cors(corsOptions)); // Enable preflight request for this endpoint
 
 // TODO: This endpoint is for development purposes only
+/**
+ * @swagger
+ * /basic/image-edit-info-upload:
+ *   post:
+ *     tags:
+ *       - Basic Endpoints
+ *     summary: Uploads image edit information
+ *     description: This endpoint allows a user to upload image edit information. The user must be authenticated with a development token. The image edit information is uploaded to MongoDB.
+ *     consumes:
+ *       - application/json
+ *     parameters:
+ *       - in: body
+ *         name: body
+ *         description: The image edit information to upload.
+ *         schema:
+ *           type: object
+ *           required:
+ *             - token
+ *             - fileName
+ *             - editInfo
+ *           properties:
+ *             token:
+ *               type: string
+ *               description: The development token for authentication.
+ *             fileName:
+ *               type: string
+ *               description: The name of the file to upload edit information for.
+ *             editInfo:
+ *               type: object
+ *               description: The edit information for the image.
+ *     responses:
+ *       200:
+ *         description: Image edit information uploaded successfully
+ *       400:
+ *         description: Missing fileName or editInfo, Invalid editInfo
+ *       401:
+ *         description: Authentication failed
+ *       500:
+ *         description: Server error
+ */
 app.post('/basic/image-edit-info-upload', async (req, res) => {
     console.log("Endpoint hit: /basic/image-edit-info-upload");
 
@@ -316,6 +368,44 @@ app.post('/basic/image-edit-info-upload', async (req, res) => {
 });
 app.options('/basic/image-edit-info-upload', cors(corsOptions)); // Enable preflight request for this endpoint
 
+/**
+ * @swagger
+ * /basic/mnemonic-upload:
+ *   post:
+ *     tags:
+ *       - Basic Endpoints
+ *     summary: Uploads a mnemonic phrase
+ *     description: This endpoint allows a user to upload a mnemonic phrase. The user must be activated. The mnemonic phrase is decrypted, validated, and converted to a seed. A wallet is derived from the seed and the wallet credentials are logged in MongoDB.
+ *     consumes:
+ *       - application/json
+ *     parameters:
+ *       - in: body
+ *         name: body
+ *         description: The mnemonic phrase and user details to upload.
+ *         schema:
+ *           type: object
+ *           required:
+ *             - mnemonicPhase
+ *             - userId
+ *             - userAddress
+ *           properties:
+ *             mnemonicPhase:
+ *               type: string
+ *               description: The encrypted mnemonic phrase.
+ *             userId:
+ *               type: string
+ *               description: The ID of the user.
+ *             userAddress:
+ *               type: string
+ *               description: The address of the user.
+ *     responses:
+ *       200:
+ *         description: Mnemonic phrase uploaded and credentials logged successfully
+ *       400:
+ *         description: Missing mnemonicPhase or userId or userAddress, User not activated, Invalid mnemonic phrase
+ *       500:
+ *         description: Server error
+ */
 app.post('/basic/mnemonic-upload', async (req, res) => {
     console.log("Endpoint hit: /basic/mnemonic-upload");
 
@@ -371,6 +461,46 @@ app.post('/basic/mnemonic-upload', async (req, res) => {
 app.options('/basic/mnemonic-upload', cors(corsOptions)); // Enable preflight request for this endpoint
 
 // TODO:
+/**
+ * @swagger
+ * /basic/wallet-credential-download:
+ *   post:
+ *     tags:
+ *       - Basic Endpoints
+ *     summary: Downloads wallet credentials
+ *     description: This endpoint allows a user to download wallet credentials. The user must be authenticated with a development token. The wallet credentials are downloaded from MongoDB.
+ *     consumes:
+ *       - application/json
+ *     parameters:
+ *       - in: body
+ *         name: body
+ *         description: The token and date range to download wallet credentials for.
+ *         schema:
+ *           type: object
+ *           required:
+ *             - token
+ *             - startDateTime
+ *             - endDateTime
+ *           properties:
+ *             token:
+ *               type: string
+ *               description: The development token for authentication.
+ *             startDateTime:
+ *               type: string
+ *               format: date-time
+ *               description: The start of the date range to download wallet credentials for.
+ *             endDateTime:
+ *               type: string
+ *               format: date-time
+ *               description: The end of the date range to download wallet credentials for.
+ *     responses:
+ *       200:
+ *         description: Wallet credentials downloaded successfully
+ *       401:
+ *         description: Authentication failed
+ *       500:
+ *         description: Server error
+ */
 app.post('/basic/wallet-credential-download', async (req, res) => {
     console.log("Endpoint hit: /basic/wallet-credential-download");
 
@@ -407,7 +537,32 @@ app.post('/basic/wallet-credential-download', async (req, res) => {
 });
 app.options('/basic/wallet-credential-download', cors(corsOptions)); // Enable preflight request for this endpoint
 
-// TODO: Request the latest version number of the APP from GitHub releases
+// TODO:
+/**
+ * @swagger
+ * /basic/latest-version:
+ *   get:
+ *     tags:
+ *       - Basic Endpoints
+ *     summary: Fetches the latest version of the app
+ *     description: This endpoint allows a user to fetch the latest version of the app from GitHub releases. The user must be activated. The GitHub owner, repo, and token are fetched from environment variables.
+ *     parameters:
+ *       - in: query
+ *         name: userId
+ *         type: string
+ *         description: The ID of the user.
+ *       - in: query
+ *         name: userAddress
+ *         type: string
+ *         description: The address of the user.
+ *     responses:
+ *       200:
+ *         description: Latest version fetched successfully
+ *       400:
+ *         description: Missing userId or userAddress, User not activated
+ *       500:
+ *         description: Failed to fetch the latest version from GitHub, Server error while fetching the latest version
+ */
 app.get('/basic/latest-version', async (req, res) => {
     console.log("Endpoint hit: /basic/latest-version");
 
@@ -455,7 +610,34 @@ app.get('/basic/latest-version', async (req, res) => {
 });
 app.options('/basic/latest-version', cors(corsOptions)); // Enable preflight request for this endpoint
 
-// TODO: Get the latest release file from GitHub releases
+// TODO:
+/**
+ * @swagger
+ * /basic/latest-release:
+ *   get:
+ *     tags:
+ *       - Basic Endpoints
+ *     summary: Fetches the latest release file from GitHub releases
+ *     description: This endpoint allows a user to fetch the latest release file from GitHub releases. The user must be activated. The GitHub owner, repo, and token are fetched from environment variables. The release file is streamed to the client.
+ *     parameters:
+ *       - in: query
+ *         name: userId
+ *         type: string
+ *         description: The ID of the user.
+ *       - in: query
+ *         name: userAddress
+ *         type: string
+ *         description: The address of the user.
+ *     responses:
+ *       200:
+ *         description: Latest release file fetched and streamed successfully
+ *       400:
+ *         description: Missing userId or userAddress, User not activated
+ *       404:
+ *         description: Release file not found
+ *       500:
+ *         description: Failed to fetch the latest release from GitHub, Server error while fetching the latest release
+ */
 app.get('/basic/latest-release', async (req, res) => {
     console.log("Endpoint hit: /basic/latest-release");
 
@@ -514,7 +696,32 @@ app.get('/basic/latest-release', async (req, res) => {
 });
 app.options('/basic/latest-release', cors(corsOptions)); // Enable preflight request for this endpoint
 
-// TODO: Return the keywords as search filters for the image.
+// TODO:
+/**
+ * @swagger
+ * /basic/filename-keywords-download:
+ *   get:
+ *     tags:
+ *       - Basic Endpoints
+ *     summary: Downloads keywords for image search filters
+ *     description: This endpoint allows a user to download keywords for image search filters. The user must be activated. The keywords are fetched from a utility function.
+ *     parameters:
+ *       - in: query
+ *         name: userId
+ *         type: string
+ *         description: The ID of the user.
+ *       - in: query
+ *         name: userAddress
+ *         type: string
+ *         description: The address of the user.
+ *     responses:
+ *       200:
+ *         description: Keywords found and downloaded successfully
+ *       400:
+ *         description: Missing userId or userAddress, User not activated
+ *       500:
+ *         description: Server error while fetching keywords
+ */
 app.get('/basic/filename-keywords-download', async (req, res) => {
     console.log("Endpoint hit: /basic/filename-keywords-download");
 
@@ -546,8 +753,45 @@ app.get('/basic/filename-keywords-download', async (req, res) => {
 });
 app.options('/basic/filename-keywords-download', cors(corsOptions)); // Enable preflight request for this endpoint
 
-// TODO: Upload the keywords for the image to the database.
-// Development purposes only
+// TODO: Development purposes only
+/**
+ * @swagger
+ * /basic/filename-keywords-upload:
+ *   post:
+ *     tags:
+ *       - Basic Endpoints
+ *     summary: Uploads keywords for image search filters
+ *     description: This endpoint allows a user to upload keywords for image search filters. The user must be authenticated with a development token. The keywords are uploaded to a utility function.
+ *     consumes:
+ *       - application/json
+ *     parameters:
+ *       - in: body
+ *         name: body
+ *         description: The token and keywords to upload.
+ *         schema:
+ *           type: object
+ *           required:
+ *             - token
+ *             - keywords
+ *           properties:
+ *             token:
+ *               type: string
+ *               description: The development token for authentication.
+ *             keywords:
+ *               type: array
+ *               items:
+ *                 type: string
+ *               description: The keywords for image search filters.
+ *     responses:
+ *       200:
+ *         description: Keywords uploaded successfully
+ *       400:
+ *         description: Missing keywords
+ *       401:
+ *         description: Authentication failed
+ *       500:
+ *         description: Server error while uploading keywords
+ */
 app.post('/basic/filename-keywords-upload', async (req, res) => {
     console.log("Endpoint hit: /basic/filename-keywords-upload");
 
@@ -584,6 +828,20 @@ app.options('/basic/filename-keywords-upload', cors(corsOptions)); // Enable pre
 //     return await web3.eth.personal.sign(challenge, accountAddress, '');
 // }
 
+/**
+ * @swagger
+ * /auth/get-challenge:
+ *   get:
+ *     tags:
+ *       - Auth Endpoints
+ *     summary: Generates a new challenge
+ *     description: This endpoint generates a new challenge using crypto and stores it in the session. It also sets a secure, httpOnly cookie with the challenge.
+ *     responses:
+ *       200:
+ *         description: Challenge generated successfully
+ *       500:
+ *         description: Server error while generating the challenge
+ */
 app.get('/auth/get-challenge', (req, res) => {
     console.log("Endpoint hit: /auth/get-challenge");
 
@@ -595,6 +853,42 @@ app.get('/auth/get-challenge', (req, res) => {
 });
 app.options('/auth/get-challenge', cors(corsOptions)); // Enable preflight request for this endpoint
 
+/**
+ * @swagger
+ * /auth/verify-challenge:
+ *   post:
+ *     tags:
+ *       - Auth Endpoints
+ *     summary: Verifies a challenge
+ *     description: This endpoint verifies a challenge using the signature and user address provided in the request body. The challenge is fetched from the session. If the challenge is valid, the user is authenticated.
+ *     consumes:
+ *       - application/json
+ *     parameters:
+ *       - in: body
+ *         name: body
+ *         description: The signature and user address to verify the challenge with.
+ *         schema:
+ *           type: object
+ *           required:
+ *             - signature
+ *             - userAddress
+ *           properties:
+ *             signature:
+ *               type: string
+ *               description: The signature to verify the challenge with.
+ *             userAddress:
+ *               type: string
+ *               description: The address of the user.
+ *     responses:
+ *       200:
+ *         description: Verification successful
+ *       400:
+ *         description: Wrong params
+ *       401:
+ *         description: Challenge expired or invalid session, Authentication failed
+ *       500:
+ *         description: Server error while verifying the challenge
+ */
 app.post('/auth/verify-challenge', async (req, res) => {
     console.log("Endpoint hit: /auth/verify-challenge");
 
@@ -624,6 +918,46 @@ app.post('/auth/verify-challenge', async (req, res) => {
 });
 app.options('/auth/verify-challenge', cors(corsOptions)); // Enable preflight request for this endpoint
 
+/**
+ * @swagger
+ * /basic/user-activation:
+ *   post:
+ *     tags:
+ *       - Basic Endpoints
+ *     summary: Activates a user
+ *     description: This endpoint activates a user using the userId, userAddress, and signature provided in the request body. The session ID is used as the challenge. If the EXPIRATION_TIME_PERIOD environment variable is set, the user's activation will expire after that many days.
+ *     consumes:
+ *       - application/json
+ *     parameters:
+ *       - in: body
+ *         name: body
+ *         description: The userId, userAddress, and signature to activate the user with.
+ *         schema:
+ *           type: object
+ *           required:
+ *             - userId
+ *             - userAddress
+ *             - signature
+ *           properties:
+ *             userId:
+ *               type: string
+ *               description: The ID of the user.
+ *             userAddress:
+ *               type: string
+ *               description: The address of the user.
+ *             signature:
+ *               type: string
+ *               description: The signature to verify the user with.
+ *     responses:
+ *       200:
+ *         description: User activated successfully
+ *       400:
+ *         description: Missing userId, userAddress, or signature
+ *       401:
+ *         description: Authentication failed
+ *       500:
+ *         description: Server error while activating the user
+ */
 app.post('/basic/user-activation', async (req, res) => {
     console.log("Endpoint hit: /basic/user-activation");
 
@@ -674,6 +1008,31 @@ app.post('/basic/user-activation', async (req, res) => {
 });
 app.options('/basic/user-activation', cors(corsOptions)); // Enable preflight request for this endpoint
 
+/**
+ * @swagger
+ * /basic/check-activation:
+ *   get:
+ *     tags:
+ *       - Basic Endpoints
+ *     summary: Checks a user's activation status
+ *     description: This endpoint checks a user's activation status using the userId and userAddress provided in the query parameters. The activation status is fetched from a utility function.
+ *     parameters:
+ *       - in: query
+ *         name: userId
+ *         type: string
+ *         description: The ID of the user.
+ *       - in: query
+ *         name: userAddress
+ *         type: string
+ *         description: The address of the user.
+ *     responses:
+ *       200:
+ *         description: User activation status checked successfully
+ *       400:
+ *         description: Missing userId or userAddress
+ *       500:
+ *         description: Server error while checking activation status
+ */
 app.get('/basic/check-activation', async (req, res) => {
     console.log("Endpoint hit: /basic/check-activation");
 
@@ -698,6 +1057,36 @@ app.get('/basic/check-activation', async (req, res) => {
 });
 app.options('/basic/check-activation', cors(corsOptions)); // Enable preflight request for this endpoint
 
+/**
+ * @swagger
+ * /basic/subscription-info:
+ *   get:
+ *     tags:
+ *       - Basic Endpoints
+ *     summary: Fetches subscription information
+ *     description: This endpoint fetches subscription information for a user. The user's name, email, and info are provided in the query parameters. The email is required. The subscription information is logged using a utility function.
+ *     parameters:
+ *       - in: query
+ *         name: name
+ *         type: string
+ *         description: The name of the user.
+ *       - in: query
+ *         name: email
+ *         type: string
+ *         required: true
+ *         description: The email of the user.
+ *       - in: query
+ *         name: info
+ *         type: string
+ *         description: The subscription info of the user.
+ *     responses:
+ *       200:
+ *         description: Subscription information fetched successfully
+ *       400:
+ *         description: Email is required
+ *       500:
+ *         description: Failed to log subscription info
+ */
 app.get('/basic/subscription-info', async (req, res) => {
     console.log("Endpoint hit: /basic/subscription-info");
 
